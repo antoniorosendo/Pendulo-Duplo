@@ -1,17 +1,23 @@
-cmake_minimum_required(VERSION 3.8)
-project(Foucault)
+cmake_minimum_required(VERSION 3.0)
+project(PenduloTrack)
 
+# Pede para o Linux achar o OpenCV instalado
+find_package(OpenCV REQUIRED)
+
+# Avisa onde estão os headers (.h)
+include_directories(${OpenCV_INCLUDE_DIRS})
+include_directories(headers)
+
+# Configura o C++ moderno (C++11 ou superior)
 set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-set(SOURCE_FILES release/source/main.cpp release/source/calibration.cpp release/source/offlineGraph.cpp release/source/headers/guiFunctions.h)
+# Cria o executável final chamado "PenduloApp" juntando os 3 arquivos principais
+add_executable(PenduloApp 
+    release/source/main.cpp 
+    release/source/calibration.cpp 
+    release/source/offlineGraph.cpp
+)
 
-add_executable(Foucault ${SOURCE_FILES})
-set(CMAKE_THREAD_LIBS_INIT "-lpthread")
-SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pthread")
-set(CMAKE_HAVE_THREADS_LIBRARY 1)
-set(CMAKE_USE_WIN32_THREADS_INIT 0)
-set(CMAKE_USE_PTHREADS_INIT 1)
-set(THREADS_PREFER_PTHREAD_FLAG ON)
-find_package( OpenCV REQUIRED )
-target_link_libraries( Foucault ${OpenCV_LIBS})
-
+# Liga as bibliotecas necessárias (OpenCV e Threads)
+target_link_libraries(PenduloApp ${OpenCV_LIBS} pthread)

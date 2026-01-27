@@ -1,0 +1,3 @@
+/home/antonio/Documents/GitHub/Pendulo-Duplo/build/CMakeFiles/PenduloApp.dir
+/home/antonio/Documents/GitHub/Pendulo-Duplo/build/CMakeFiles/edit_cache.dir
+/home/antonio/Documents/GitHub/Pendulo-Duplo/build/CMakeFiles/rebuild_cache.dir

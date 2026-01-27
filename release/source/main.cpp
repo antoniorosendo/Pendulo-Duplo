@@ -121,12 +121,12 @@ int main(int argc, char *argv[]) {
 
     ///If on Raspberry:
     // open the default camera
-    VideoCapture capture(0);
+    // VideoCapture capture(0);
     // setting fps rate of video to grab
-    capture.set(CAP_PROP_FPS, int(9));
+    // capture.set(CAP_PROP_FPS, int(9));
 
     ///If working locally:
-    //VideoCapture capture("../videos/output.mp4");
+    VideoCapture capture("/home/antonio/Documents/GitHub/Pendulo-Duplo/build/teste.mp4");
 
 
     Mat originalFrame;
