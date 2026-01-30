@@ -73,7 +73,7 @@ void frameComputation(const string& whichThread);
 int main(int argc, char *argv[]) {
 
     string calibrationFile = "calibration.txt";
-    string templateFile = "template.png";
+    string templateFile = "../images/template.png";
 
     if (argc > 2) {
         cerr << "Too many arguments" << endl;
@@ -121,12 +121,12 @@ int main(int argc, char *argv[]) {
 
     ///If on Raspberry:
     // open the default camera
-    // VideoCapture capture(0);
+    VideoCapture capture(0);
     // setting fps rate of video to grab
-    // capture.set(CAP_PROP_FPS, int(9));
+    capture.set(CAP_PROP_FPS, 30);
 
     ///If working locally:
-    VideoCapture capture("/home/antonio/Documents/GitHub/Pendulo-Duplo/build/teste.mp4");
+    //VideoCapture capture("../videos/teste.mp4");
 
 
     Mat originalFrame;
