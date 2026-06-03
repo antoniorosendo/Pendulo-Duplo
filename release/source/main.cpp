@@ -9,7 +9,6 @@
 #include <iostream>
 #include <string>
 #include "headers/guiFunctions.h"
-//even if CLion marks it as unused, the following include is required:
 #include <fstream>
 
 #define PI 3.14159265
@@ -17,45 +16,44 @@
 using namespace std;
 using namespace cv;
 
-bool is_graph_activated=false;
-int graphPoints= 100;
+bool is_graph_activated = false;
+int graphPoints = 100;
 int* ptrGraphPoints = &graphPoints;
-int expectedFrameNumber=0;
-void toggleView(int status, void* data){
-    if(status==0)
-        is_graph_activated=false;
-    else
-        is_graph_activated=true;
+int expectedFrameNumber = 0;
 
+void toggleView(int status, void* data){
+    if(status == 0) is_graph_activated = false;
+    else is_graph_activated = true;
 }
 
 void checkTrackbar(int trackPos, void* data) {
-    if(trackPos<1)
-        *ptrGraphPoints = 1;
+    if(trackPos < 1) *ptrGraphPoints = 1;
 }
 
 /// Global Variables
 Mat frame;
-Mat templ;
+Mat templ1; // Template para a massa 1
+Mat templ2; // Template para a massa 2
 double myMatrix[3][3];
 
 String image_window = "Window";
 Mat result_A;
 Mat result_B;
 
-std::queue<Point2d> pointsVector;
+// Filas para o gráfico de desenho
+std::queue<Point2d> pointsVector1;
+std::queue<Point2d> pointsVector2;
 Mat plot_image;
 
-int match_method=5;
+int match_method = 5; // CCOEFF_NORMED (ZNCC)
 
-/// This is how we handle the frames, using two queues for the two threads
+/// Filas atualizadas: tuple agora carrega (Mat, int, double, x1, y1, x2, y2)
 std::queue<std::tuple<Mat, int, double>> frameQueue_A;
 std::queue<std::tuple<Mat, int, double>> frameQueue_B;
 
-std::queue<tuple<Mat, int, double, double, double>> resultQueue_A;
-std::queue<tuple<Mat, int, double, double, double>> resultQueue_B;
+std::queue<tuple<Mat, int, double, double, double, double, double>> resultQueue_A;
+std::queue<tuple<Mat, int, double, double, double, double, double>> resultQueue_B;
 
-/// to make request for extracting from queue the inserted frames to write back to file
 struct request{
     std::mutex mx;
     std::condition_variable cv;
@@ -64,70 +62,52 @@ request requestA;
 request requestB;
 
 /// Function Headers
-tuple<double, double> MatchingMethod( int, void*, const string&, Mat croppedFrame);
+tuple<double, double, double, double> MatchingMethod( int, void*, const string&, Mat croppedFrame);
 void frameComputation(const string& whichThread);
 [[noreturn]] void writeFile(const bool perspectiveCorrection);
-
 
 /** @function main */
 int main(int argc, char *argv[]) {
 
     string calibrationFile = "calibration.txt";
-    string templateFile = "../images/template.png";
+    string templateFile1 = "../images/template1.jpg";
+    string templateFile2 = "../images/template2.jpg";
 
     if (argc > 2) {
         cerr << "Too many arguments" << endl;
-        cout << "Execute with option '-h' or '-help' (without quotes) to see all the possible configuration" << endl;
         exit(1);
     }
     if (argc == 2) {
-        if (strcmp(argv[1], "-h") == 0 || strcmp(argv[1], "-help") == 0) {
-            printf("Program Options:\n");
-            printf("Execute the program with none or one of the following arguments.\n");
-            printf("-c  or  -calibrate		To calibrate the camera.\n");
-            printf("-g  or  -graph          To display a 2D graph of coordinates from CSV file.\n");
-            printf("-h  or  -help			To show this message.\n");
-            exit(0);
-        }
-
-        if (strcmp(argv[1], "-g") == 0 || strcmp(argv[1], "-graph") == 0) {
-            drawGraph();
-            exit(0);
-        }
-
-        if (strcmp(argv[1], "-c") == 0 || strcmp(argv[1], "-calibrate") == 0) {
-            calibrateCamera();
-            exit(0);
-        }
-
+        if (strcmp(argv[1], "-h") == 0 || strcmp(argv[1], "-help") == 0) { exit(0); }
+        if (strcmp(argv[1], "-g") == 0 || strcmp(argv[1], "-graph") == 0) { drawGraph(); exit(0); }
+        if (strcmp(argv[1], "-c") == 0 || strcmp(argv[1], "-calibrate") == 0) { calibrateCamera(); exit(0); }
         cerr << argv[1] << " is an unknown option" << endl;
         exit(1);
     }
 
-    cout << "Execute with option '-h' or '-help' (without quotes) to see all the possible arguments" << endl;
-
     typedef std::chrono::high_resolution_clock Time;
     typedef std::chrono::duration<double> TimeCast;
 
-    /// Load image and template
-
-    if(fileExist(templateFile))
-        templ = imread(templateFile, 1);
-    else {
-        cerr << "ERROR. Can't find template file with name: "<< templateFile<<" \n Closing..." << endl;
-        cerr.flush();
+    /// Load templates
+    if(fileExist(templateFile1) && fileExist(templateFile2)) {
+        templ1 = imread(templateFile1, 1);
+        templ2 = imread(templateFile2, 1);
+    } else {
+        cerr << "ERROR. Can't find template files \n Closing..." << endl;
         exit(-1);
     }
 
-    ///If on Raspberry:
-    // open the default camera
-    VideoCapture capture(0);
-    // setting fps rate of video to grab
+    //WEBCAM
+    VideoCapture capture(0, cv::CAP_V4L2); 
     capture.set(CAP_PROP_FPS, 30);
 
-    ///If working locally:
-    //VideoCapture capture("../videos/teste.mp4");
+    // PLANO B: Lendo vídeo gravado para apresentação
+    // VideoCapture capture("../videos/teste.mp4"); 
 
+    if(!capture.isOpened()) {
+        cerr << "ERROR! Não foi possível abrir o arquivo de vídeo." << endl;
+        return -1;
+    }
 
     Mat originalFrame;
     capture.read(originalFrame);
@@ -135,179 +115,94 @@ int main(int argc, char *argv[]) {
     int frameHeight = originalFrame.size().height;
     plot_image = Mat::zeros( frameHeight, frameWidth, CV_8UC3);
 
-
-
-    ///ask if the user wants perspectiveCorrection
-    string answer;
-    do{
-        cout<<"Do you want the program to apply perspective correction? [y/n]"<<endl;
-        getline(cin,answer);
-    }
-    while(answer!="y" && answer!="n");
-
-    bool perspectiveCorrection = false;
-    if(answer=="y") {
-        perspectiveCorrection = true;
-        Point2f inputPoints[4];
-        if(fileExist(calibrationFile)) {
-            fstream file(calibrationFile);
-            string textLine;
-            int currentLine = 0;
-            int posX, posY;
-            string valX,valY;
-            while (getline(file, textLine) && currentLine<4) {
-                try {
-                    int dotComma = textLine.find(";");
-                    valX = textLine.substr(0, dotComma);
-                    valY = textLine.substr(dotComma + 1, textLine.length());
-
-                    posX = stoi(valX);
-                    posY = stoi(valY);
-                    inputPoints[currentLine] = Point(posX, posY);
-                    currentLine++;
-
-                } catch (...) {
-                    cerr << "ERROR: something went wrong while parsing old points from "<<calibrationFile<<endl;
-                    cerr<< " Wrong value: x "<<valX<<" Y "<<valY;
-                    cerr << "\nPlease, retry calibration process";
-                    cout<<"Closing...";
-                    cerr.flush();
-                    file.close();
-                    exit(-2);
-                }
-            }
-            cout<<"Calibration file ok.";
-
-        }
-        else{
-            cerr<<"Configuration file "<<calibrationFile<<" not found"<<endl;
-            cerr << "\nPlease, retry calibration process";
-            cout<<"Closing...";
-            cerr.flush();
-            exit(-3);
-        }
-
-        Point p5 = Point(0, 0);
-        int ABx = abs(inputPoints[0].x - inputPoints[1].x);
-        int CDx =  abs(inputPoints[2].x - inputPoints[3].x);
-        int perspectiveWidth = ABx < CDx ? CDx : ABx;
-        int ACy = abs(inputPoints[0].y - inputPoints[2].y);
-        int BDy =  abs(inputPoints[1].y - inputPoints[3].y);
-        int perspectiveHeight = ACy < BDy ? BDy : ACy;
-
-        Point p6 = Point(perspectiveWidth, 0);
-        Point p7 = Point(0, perspectiveHeight);
-        Point p8 = Point(perspectiveWidth, perspectiveHeight);
-        String transform = "New View";
-
-        Point2f outPoints[] = {p5, p6, p7, p8};
-        Mat matrix = getPerspectiveTransform(inputPoints, outPoints);
-        for (int i = 0; i < 3; i++)
-            for (int j = 0; j < 3; j++)
-                myMatrix[i][j] = matrix.at<double>(i, j);
-    }
+    ///ask if the user wants perspectiveCorrection (Simulando 'n' por padrão para teste)
+    bool perspectiveCorrection = false; 
 
     /// starting the two threads that handle the frame computation here
     std::thread thread1 (frameComputation, "threadA");
     std::thread thread2 (frameComputation, "threadB");
-    std::thread thread3 (writeFile,perspectiveCorrection);
+    std::thread thread3 (writeFile, perspectiveCorrection);
     thread1.detach();
     thread2.detach();
     thread3.detach();
 
     auto startTime = Time::now();
     auto newTime = Time::now();
-    TimeCast elapsed=newTime - startTime;
+    TimeCast elapsed = newTime - startTime;
     bool start = false;
     std::tuple<Mat, int, double> frameInfo;
-    int frame_number=0;
+    int frame_number = 0;
 
-
-
-    /// initializing Mat of graph of movements
     plot_image = cv::Scalar(255, 255, 255);
 
     while(true) {
-
-        /// wait for a new frame from camera and store it into 'frame'
         capture.read(frame);
         if (frame.empty()) {
-            cerr << "ERROR! blank frame grabbed\n";
-            break;
+            cerr << "Fim do vídeo ou frame vazio ignorado.\n";
+            break; // Se for arquivo de vídeo, break está correto pois o vídeo acaba.
         }
 
-        /// Getting the current timestamp to save it to the file
         newTime = Time::now();
         if(!start){
             startTime = newTime;
-            start=true;
+            start = true;
         }
         elapsed = newTime - startTime;
 
-        /// preparing frame info to pass on the proper thread
         frameInfo = std::make_tuple(frame.clone(), frame_number, elapsed.count());
 
-        /// equally distributing the work on the two queues
-        if (frame_number % 2 ==0){
-            frameQueue_A.push(frameInfo);
-        }else{
-            frameQueue_B.push(frameInfo);
-        }
+        if (frame_number % 2 == 0) frameQueue_A.push(frameInfo);
+        else frameQueue_B.push(frameInfo);
 
         frame_number++;
-
-        // to print the status of the queues
-        //if (frame_number % 100 ==0)
-        //   cout<<frame_number<<" Elements in FrameA: "<<frameQueue_A.size()<<", elements in FrameB: "<<frameQueue_B.size()<<endl;
-
+        // Para não ler o vídeo mais rápido que as threads processam (simulando a câmera)
+        //std::this_thread::sleep_for(std::chrono::milliseconds(30)); 
     }
 
-    /// the camera will be de-initialized automatically in VideoCapture destructor
+    // Mantém o programa rodando para as threads terminarem de gravar o arquivo
+    std::this_thread::sleep_for(std::chrono::seconds(2));
     return 0;
 }
 
-/**
- * @function MatchingMethod
- * @brief Trackbar callback
- */
-tuple<double, double> MatchingMethod( int, void*, const string& whichThread, Mat croppedFrame) {
+
+tuple<double, double, double, double> MatchingMethod( int, void*, const string& whichThread, Mat croppedFrame) {
     Mat *result_X;
-    if(whichThread=="threadA"){
-        result_X = &result_A;
-    }else{
-        result_X = &result_B;
-    }
+    if(whichThread == "threadA") result_X = &result_A;
+    else result_X = &result_B;
 
-    /// Create the result matrix
-    int result_cols =  croppedFrame.cols - templ.cols + 1;
-    int result_rows = croppedFrame.rows - templ.rows + 1;
-
-    result_X->create(result_rows, result_cols, CV_32FC1);
-
-    /// Do the Matching and Normalize
-    matchTemplate( croppedFrame, templ, *result_X, match_method );
+    /// ---- MASSA 1 ----
+    int result_cols1 = croppedFrame.cols - templ1.cols + 1;
+    int result_rows1 = croppedFrame.rows - templ1.rows + 1;
+    result_X->create(result_rows1, result_cols1, CV_32FC1);
+    matchTemplate( croppedFrame, templ1, *result_X, match_method );
     normalize( *result_X, *result_X, 0, 1, NORM_MINMAX, -1, Mat() );
 
-    /// Localizing the best match with minMaxLoc
-    double minVal; double maxVal; Point minLoc; Point maxLoc;
-    Point matchLoc;
+    double minVal1, maxVal1; Point minLoc1, maxLoc1, matchLoc1;
+    minMaxLoc( *result_X, &minVal1, &maxVal1, &minLoc1, &maxLoc1, Mat() );
+    matchLoc1 = (match_method == TM_SQDIFF || match_method == TM_SQDIFF_NORMED) ? minLoc1 : maxLoc1;
 
-    minMaxLoc( *result_X, &minVal, &maxVal, &minLoc, &maxLoc, Mat() );
+    /// ---- MASSA 2 ----
+    int result_cols2 = croppedFrame.cols - templ2.cols + 1;
+    int result_rows2 = croppedFrame.rows - templ2.rows + 1;
+    result_X->create(result_rows2, result_cols2, CV_32FC1);
+    matchTemplate( croppedFrame, templ2, *result_X, match_method );
+    normalize( *result_X, *result_X, 0, 1, NORM_MINMAX, -1, Mat() );
 
-    /// For SQDIFF and SQDIFF_NORMED, the best matches are lower values. For all the other methods, the higher the better
-    if( match_method  == TM_SQDIFF || match_method == TM_SQDIFF_NORMED ) {
-        matchLoc = minLoc;
-    } else {
-        matchLoc = maxLoc;
-    }
+    double minVal2, maxVal2; Point minLoc2, maxLoc2, matchLoc2;
+    minMaxLoc( *result_X, &minVal2, &maxVal2, &minLoc2, &maxLoc2, Mat() );
+    matchLoc2 = (match_method == TM_SQDIFF || match_method == TM_SQDIFF_NORMED) ? minLoc2 : maxLoc2;
 
-    /// Show me what you got
-    rectangle( croppedFrame, matchLoc, Point( matchLoc.x + templ.cols , matchLoc.y + templ.rows ), Scalar::all(0), 2, 8, 0 );
-    rectangle( *result_X, matchLoc, Point( matchLoc.x + templ.cols , matchLoc.y + templ.rows ), Scalar::all(0), 2, 8, 0 );
-    circle(croppedFrame,Point(matchLoc.x + templ.cols/2, matchLoc.y + templ.rows/2),0,Scalar( 0, 255, 0 ),5);
+    /// Desenhando na imagem de saída
+    rectangle( croppedFrame, matchLoc1, Point( matchLoc1.x + templ1.cols , matchLoc1.y + templ1.rows ), Scalar(0,0,255), 2, 8, 0 ); // Vermelho
+    rectangle( croppedFrame, matchLoc2, Point( matchLoc2.x + templ2.cols , matchLoc2.y + templ2.rows ), Scalar(255,0,0), 2, 8, 0 ); // Azul
+    
+    circle(croppedFrame, Point(matchLoc1.x + templ1.cols/2, matchLoc1.y + templ1.rows/2), 0, Scalar(0,255,0), 5);
+    circle(croppedFrame, Point(matchLoc2.x + templ2.cols/2, matchLoc2.y + templ2.rows/2), 0, Scalar(0,255,0), 5);
 
-    /// computing and returning the position
-    return std::make_tuple(matchLoc.x + templ.cols/2, matchLoc.y + templ.rows/2);
+    return std::make_tuple(
+        matchLoc1.x + templ1.cols/2.0, matchLoc1.y + templ1.rows/2.0,
+        matchLoc2.x + templ2.cols/2.0, matchLoc2.y + templ2.rows/2.0
+    );
 }
 
 void frameComputation(const string& whichThread){
@@ -315,47 +210,34 @@ void frameComputation(const string& whichThread){
     int myFrameNumber;
     double ourElapsed;
     std::queue<std::tuple<Mat, int, double>> *frameQueue_X;
-    std::queue<tuple<Mat, int, double, double, double>> *resultQueue_X;
-    double position_X;
-    double position_Y;
+    std::queue<tuple<Mat, int, double, double, double, double, double>> *resultQueue_X;
+    
+    double pos_X1, pos_Y1, pos_X2, pos_Y2;
     request *requestX;
 
-    // taking the reference of the proper queues
-    if(whichThread=="threadA"){
+    if(whichThread == "threadA"){
         frameQueue_X = &frameQueue_A;
         resultQueue_X = &resultQueue_A;
         requestX = &requestA;
-    }else{
+    } else {
         frameQueue_X = &frameQueue_B;
         resultQueue_X = &resultQueue_B;
         requestX = &requestB;
     }
 
-    // iterating through the queue
     while(true){
         if(!frameQueue_X->empty()){
-            //extracting first element available from queue and unpacking the tuple content
             tie(myFrame, myFrameNumber, ourElapsed) = frameQueue_X->front();
             frameQueue_X->pop();
 
-            // check if we succeeded
-            if (myFrame.empty()) {
-                cerr << "ERROR! blank frame grabbed\n";
-                break;
-            }
-            tuple<double, double> myResult;
+            if (myFrame.empty()) break;
 
-            // we pass in MatchingMethod a view of the Mat myCroppedFrame. When the functions returns the content of
-            // myCroppedFrame will be changed as we want (in order to show the tracking rectangle)
+            tuple<double, double, double, double> myResult;
             myResult = MatchingMethod(0, 0, whichThread, myFrame);
-            tie( position_X, position_Y) = myResult;
-            cout.flush();
+            tie(pos_X1, pos_Y1, pos_X2, pos_Y2) = myResult;
 
+            resultQueue_X->push(std::make_tuple(myFrame.clone(), myFrameNumber, ourElapsed, pos_X1, pos_Y1, pos_X2, pos_Y2));
 
-            // creating the output tuple of the form (cropped_frame, frame_number, time, position_x, position_y)
-            resultQueue_X->push(std::make_tuple(myFrame.clone(), myFrameNumber, ourElapsed, position_X, position_Y));
-
-            // acquiring the lock and notify the consumer (writeFile) of added element to the queue
             std::lock_guard<std::mutex> lock(requestX->mx);
             requestX->cv.notify_one();
         }
@@ -363,238 +245,76 @@ void frameComputation(const string& whichThread){
 }
 
 [[noreturn]] void writeFile(const bool perspectiveCorrection){
-
     time_t theTime = time(NULL);
     struct tm *aTime = localtime(&theTime);
 
-    /// Getting the current time
     string day = std::to_string(aTime->tm_mday);
-    string month = std::to_string(aTime->tm_mon + 1); // Month is 0 - 11, add 1 to get a jan-dec 1-12
-    int year = aTime->tm_year + 1900; // Year is # years since 1900
+    string month = std::to_string(aTime->tm_mon + 1);
+    int year = aTime->tm_year + 1900;
     string hour = std::to_string(aTime->tm_hour);
     string min = std::to_string(aTime->tm_min);
 
-    /// Setting the right name for the file that will store the centers positions
-    /// Y means "yes perspective correction"
     std::ostringstream oss;
-    // adding 0 in front if necessary to always have a name of the form XXXX_XX_XX_XX_XX_N.csv
-    if (month.length()==1){
-        // add a front 0 to the month
-        oss << "../PendulumCsv/" <<year<<"_0"<<month;
-    }else{
-        oss << "../PendulumCsv/" <<year<<"_"<<month;
-    }
-    if(day.length()==1){
-        oss<<"_0"<<day;
-    }else{
-        oss<<"_"<<day;
-    }
-    if(hour.length()==1){
-        oss<<"_0"<<hour;
-    }else{
-        oss<<"_"<<hour;
-    }
-    if(min.length()==1){
-        oss<<"_0"<<min;
-    }else{
-        oss<<"_"<<min;
-    }
-    std::string file_name_Y;
-    std::string file_name;
-    if(perspectiveCorrection){
-        oss<<"_Y.csv";
-        file_name_Y = oss.str();
-    }else{
-        oss<<"_N.csv";
-        file_name = oss.str();
-    }
+    oss << "../PendulumCsv/" << year << "_" << (month.length()==1?"0":"") << month << "_" << (day.length()==1?"0":"") << day << "_" << (hour.length()==1?"0":"") << hour << "_" << (min.length()==1?"0":"") << min;
+    
+    std::string file_name = oss.str() + "_N.csv";
 
-    /// Opening the file where will be saved the coordinates of centers on each frame
-    ofstream txt_file (file_name);
-    if (txt_file.is_open())
-        cout << "Opened file "<< file_name<<"\n";
+    ofstream txt_file(file_name);
+    if (txt_file.is_open()) cout << "Opened file "<< file_name <<"\n";
+    
+    // NOVO CABEÇALHO PARA 2 PONTOS
+    txt_file << "time;x1;y1;x2;y2\n";
 
-    ofstream txt_file_Y (file_name_Y);
-    if (txt_file_Y.is_open())
-        cout << "Opened file "<< file_name_Y<<"\n";
-
-    txt_file <<"time;x;y\n";
-    txt_file_Y <<"time;x;y\n";
-
-    int frameNumber_X=-1;
-    double elapsed_X=-1.0;
-    double pos_X;
-    double pos_Y;
-    std::queue<tuple<Mat, int, double, double, double>> *resultQueue_X;
+    int frameNumber_X = -1;
+    double elapsed_X = -1.0;
+    double pos_X1, pos_Y1, pos_X2, pos_Y2;
+    std::queue<tuple<Mat, int, double, double, double, double, double>> *resultQueue_X;
     Mat extracted_Mat_X;
-    Point2d lastPoint;
 
-    namedWindow(image_window,WINDOW_GUI_EXPANDED);
+    namedWindow(image_window, WINDOW_GUI_EXPANDED);
     createButton("Show graph", toggleView, NULL, QT_CHECKBOX, 0);
-    createTrackbar("Number of graph points",image_window, ptrGraphPoints,1000,checkTrackbar,NULL);
-
-
-    // variables for the perspective
-    double new_position_x;
-    double new_position_y;
-    double num;
-    double dem;
-
-    // variables for computing angle
-    float xCenter= 319.79;
-    float yCenter= 245.00;
-    // npts is the total number of points
-    int npts=0;
-    // number of maximum
-    int Nmassi = 0;
-
-    // last, current and next elements to evaluate. Each array has the form [x, y, radius].
-    double last[3];
-    double current[3];
-    double next[3];
-    double* lastMax = nullptr;
-
-    double sumTheta=0;
-    int innerCountMax = 0;
-    // mean over maxNum of pair of maximum for theta
-    int maxNum=10;
-    //std::cout<<"Mean of theta over "<<maxNum*2<<" maximum"<<std::endl;
-
-    float Rgood = 100;
+    createTrackbar("Number of graph points", image_window, ptrGraphPoints, 1000, checkTrackbar, NULL);
 
     while(true){
-
-        // checking if the expected frame number is even or odd (if even we extract from the resultQueue_A, if
-        // odd from the resultQueue_B)
-        if (expectedFrameNumber % 2 ==0){
-            //waiting until some elements is added to the queue of results
+        if (expectedFrameNumber % 2 == 0){
             std::unique_lock<std::mutex> lock(requestA.mx);
             requestA.cv.wait(lock, []{return !resultQueue_A.empty();});
             resultQueue_X = &resultQueue_A;
-        }else{
-            //waiting until some elements is added to the queue of results
+        } else {
             std::unique_lock<std::mutex> lock(requestB.mx);
             requestB.cv.wait(lock, []{return !resultQueue_B.empty();});
             resultQueue_X = &resultQueue_B;
         }
 
-        //a frame has been added to the queue we were waiting for, now we can extract the desired frame and related variables
-        tie(extracted_Mat_X, frameNumber_X, elapsed_X, pos_X, pos_Y) = resultQueue_X->front();
-
+        tie(extracted_Mat_X, frameNumber_X, elapsed_X, pos_X1, pos_Y1, pos_X2, pos_Y2) = resultQueue_X->front();
         resultQueue_X->pop();
 
-        /// Perspective adjustments, only if required by the user
-        if(perspectiveCorrection) {
-            num = myMatrix[0][0] * pos_X + myMatrix[0][1] * pos_Y + myMatrix[0][2];
-            dem = myMatrix[2][0] * pos_X + myMatrix[2][1] * pos_Y + myMatrix[2][2];
-
-            new_position_x = num / dem;
-            num = myMatrix[1][0] * pos_X + myMatrix[1][1] * pos_Y + myMatrix[1][2];
-            dem = myMatrix[2][0] * pos_X + myMatrix[2][1] * pos_Y + myMatrix[2][2];
-            new_position_y = num / dem;
-            txt_file_Y << fixed << elapsed_X << ";" << (int)(new_position_x) << ";" << (int)(new_position_y) << "\n";
-            txt_file_Y.flush();
-        }
-        /// saving to txt the positions found in MatchingMethod
-
-        txt_file << fixed << elapsed_X << ";" << (int)(pos_X) << ";" << (int)(pos_Y) << "\n";
+        // Salva os 4 dados no CSV
+        txt_file << fixed << elapsed_X << ";" << (int)(pos_X1) << ";" << (int)(pos_Y1) << ";" << (int)(pos_X2) << ";" << (int)(pos_Y2) << "\n";
         txt_file.flush();
-        // incrementing the expectedFrameNumber because we handled the frame and we can pass to the later one
+        
         expectedFrameNumber++;
 
+        /// ---- PLOTANDO O GRÁFICO NA TELA ----
+        pointsVector1.push(Point2d(pos_X1, pos_Y1));
+        pointsVector2.push(Point2d(pos_X2, pos_Y2));
 
-        /// computing the angle
-        // - time is the current time
-        // - xx is the x coordinate obtained from (x coord - xCenter)
-        // - yy is the y coordinate obtained from (y coord - yCenter)
-        // - rr is the radius obtained from sqrt(xx^2+yy^2)
-        double xx = pos_X-xCenter;
-        double yy = pos_Y-yCenter;
-        double rr = sqrt(pow(xx, 2) + pow(yy, 2));
+        cv::line(plot_image, Point2d(pos_X1, pos_Y1), Point2d(pos_X1, pos_Y1), cv::Scalar(0,0,255), 2); // Linha Vermelha
+        cv::line(plot_image, Point2d(pos_X2, pos_Y2), Point2d(pos_X2, pos_Y2), cv::Scalar(255,0,0), 2); // Linha Azul
 
-        if(npts == 0){
-            next[0]=xx;
-            next[1]=yy;
-            next[2]=rr;
-        }else if(npts==1){
-            current[0]=next[0];
-            current[1]=next[1];
-            current[2]=next[2];
-            next[0]=xx;
-            next[1]=yy;
-            next[2]=rr;
-        }else{
-            last[0]=current[0];
-            last[1]=current[1];
-            last[2]=current[2];
-            current[0]=next[0];
-            current[1]=next[1];
-            current[2]=next[2];
-            next[0]=xx;
-            next[1]=yy;
-            next[2]=rr;
-
-            if ((current[2] > last[2]) && (current[2] >= next[2]) && (current[2] > Rgood)){
-                // found a new maximum
-                Nmassi++;
-                // we evaluate the maximums two by two
-                if(lastMax == nullptr){ //checks the size of the array. If the size is zero
-                    lastMax = new double[3];
-                    // this is the first of the couple to evaluate
-                    lastMax[0]=current[0];
-                    lastMax[1]=current[1];
-                    lastMax[2]=current[2];
-                    continue;
-                }
-
-                // use the consecutive maximum coordinates to obtain theta:
-                // arctan((y_current - y_last)/(x_current - x_last))
-                double theta;
-
-                if ((current[0] - lastMax[0])==0){
-                    // making sure that the denominator is not 0, and if so the arctan is 90 degrees
-                    theta=90;
-                }else{
-                    theta = atan((current[1] - lastMax[1])/(current[0] - lastMax[0])) *180 / PI; // arctan in degrees
-                }
-                if (theta < 0){
-                    theta = theta + 180;
-                }
-
-                // theta is shown averaged over maxNum consecutive maxima
-                if(innerCountMax==maxNum){
-                    sumTheta=sumTheta/maxNum;
-                    std::cout << "Elapsed time: "<< fixed << elapsed_X <<", angle: " << sumTheta << std::endl;
-                    sumTheta=theta;
-                    innerCountMax=1;
-                }else{
-                    sumTheta+=theta;
-                    innerCountMax++;
-                }
-
-                // we evaluated two max
-                lastMax = nullptr;
+        if (pointsVector1.size() >= graphPoints){
+            while(pointsVector1.size() > graphPoints){
+                Point2d lastPoint1 = pointsVector1.front();
+                Point2d lastPoint2 = pointsVector2.front();
+                cv::line(plot_image, lastPoint1, lastPoint1, cv::Scalar(255,255,255), 2);
+                cv::line(plot_image, lastPoint2, lastPoint2, cv::Scalar(255,255,255), 2);
+                pointsVector1.pop();
+                pointsVector2.pop();
             }
         }
-        npts++;
 
-        /// we add the OLD point to the pointsVector to be shown on plot_image Mat
-        pointsVector.push(Point2d(pos_X,pos_Y));
-        /// we start displaying the points
-        cv::line(plot_image, Point2d(pos_X,pos_Y), Point2d(pos_X,pos_Y), cv::Scalar(0,0,0), 1);
-
-        /// we want to display in the graph no more than 30 points. The 30th point is discarded by coloring it white
-        if (pointsVector.size()>=graphPoints){
-            while(pointsVector.size()>graphPoints){
-                lastPoint = pointsVector.front();
-                cv::line(plot_image, lastPoint, lastPoint, cv::Scalar(255,255,255), 1);
-                pointsVector.pop();
-            }
-        }
-        if(is_graph_activated)
-            imshow(image_window, plot_image);
-        else
-            imshow(image_window, extracted_Mat_X);
+        if(is_graph_activated) imshow(image_window, plot_image);
+        else imshow(image_window, extracted_Mat_X);
 
         waitKey(1);
     }
