@@ -20,6 +20,18 @@ bool is_graph_activated = false;
 int graphPoints = 100;
 int* ptrGraphPoints = &graphPoints;
 int expectedFrameNumber = 0;
+bool is_tracking = false;
+
+void startTracking(int status, void* data){
+    is_tracking = true;
+    cout << "--- RASTREAMENTO INICIADO ---" << endl;
+}
+
+// Função do botão STOP
+void stopProgram(int status, void* data){
+    cout << "--- ENCERRANDO PROGRAMA ---" << endl;
+    exit(0); // O exit(0) mata todas as threads na hora. Adeus Ctrl+C!
+}
 
 void toggleView(int status, void* data){
     if(status == 0) is_graph_activated = false;
@@ -272,6 +284,10 @@ void frameComputation(const string& whichThread){
     Mat extracted_Mat_X;
 
     namedWindow(image_window, WINDOW_GUI_EXPANDED);
+    // Injetando os novos botões (QT_PUSH_BUTTON cria botões clicáveis normais)
+    createButton("Play", startTracking, NULL, QT_PUSH_BUTTON, 0);
+    createButton("Stop", stopProgram, NULL, QT_PUSH_BUTTON, 0);
+    
     createButton("Show graph", toggleView, NULL, QT_CHECKBOX, 0);
     createTrackbar("Number of graph points", image_window, ptrGraphPoints, 1000, checkTrackbar, NULL);
 
@@ -295,23 +311,30 @@ void frameComputation(const string& whichThread){
         
         expectedFrameNumber++;
 
-        /// ---- PLOTANDO O GRÁFICO NA TELA ----
-        pointsVector1.push(Point2d(pos_X1, pos_Y1));
-        pointsVector2.push(Point2d(pos_X2, pos_Y2));
+        if(is_tracking) {
+            // Salva os 4 dados no CSV
+            txt_file << fixed << elapsed_X << ";" << (int)(pos_X1) << ";" << (int)(pos_Y1) << ";" << (int)(pos_X2) << ";" << (int)(pos_Y2) << "\n";
+            txt_file.flush();
+            
+            /// ---- PLOTANDO O GRÁFICO NA TELA ----
+            pointsVector1.push(Point2d(pos_X1, pos_Y1));
+            pointsVector2.push(Point2d(pos_X2, pos_Y2));
 
-        cv::line(plot_image, Point2d(pos_X1, pos_Y1), Point2d(pos_X1, pos_Y1), cv::Scalar(0,0,255), 2); // Linha Vermelha
-        cv::line(plot_image, Point2d(pos_X2, pos_Y2), Point2d(pos_X2, pos_Y2), cv::Scalar(255,0,0), 2); // Linha Azul
+            cv::line(plot_image, Point2d(pos_X1, pos_Y1), Point2d(pos_X1, pos_Y1), cv::Scalar(0,0,255), 2); // Linha Vermelha
+            cv::line(plot_image, Point2d(pos_X2, pos_Y2), Point2d(pos_X2, pos_Y2), cv::Scalar(255,0,0), 2); // Linha Azul
 
-        if (pointsVector1.size() >= graphPoints){
-            while(pointsVector1.size() > graphPoints){
-                Point2d lastPoint1 = pointsVector1.front();
-                Point2d lastPoint2 = pointsVector2.front();
-                cv::line(plot_image, lastPoint1, lastPoint1, cv::Scalar(255,255,255), 2);
-                cv::line(plot_image, lastPoint2, lastPoint2, cv::Scalar(255,255,255), 2);
-                pointsVector1.pop();
-                pointsVector2.pop();
+            if (pointsVector1.size() >= graphPoints){
+                while(pointsVector1.size() > graphPoints){
+                    Point2d lastPoint1 = pointsVector1.front();
+                    Point2d lastPoint2 = pointsVector2.front();
+                    // Apaga os pontos antigos (usando a cor preta que ajustamos)
+                    cv::line(plot_image, lastPoint1, lastPoint1, cv::Scalar(0,0,0), 2);
+                    cv::line(plot_image, lastPoint2, lastPoint2, cv::Scalar(0,0,0), 2);
+                    pointsVector1.pop();
+                    pointsVector2.pop();
+                }
             }
-        }
+        } // Fim do if(is_tracking)
 
         if(is_graph_activated) imshow(image_window, plot_image);
         else imshow(image_window, extracted_Mat_X);
