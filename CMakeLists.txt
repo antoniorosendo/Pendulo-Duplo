@@ -1,23 +1,11 @@
-cmake_minimum_required(VERSION 3.0)
-project(PenduloTrack)
+cmake_minimum_required(VERSION 3.12)
+project(pendulum_tracker)
 
-# Pede para o Linux achar o OpenCV instalado
+set(CMAKE_CXX_STANDARD 14)
+
 find_package(OpenCV REQUIRED)
+find_package(pybind11 REQUIRED)
 
-# Avisa onde estão os headers (.h)
-include_directories(${OpenCV_INCLUDE_DIRS})
-include_directories(headers)
-
-# Configura o C++ moderno (C++11 ou superior)
-set(CMAKE_CXX_STANDARD 11)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-
-# Cria o executável final chamado "PenduloApp" juntando os 3 arquivos principais
-add_executable(PenduloApp 
-    release/source/main.cpp 
-    release/source/calibration.cpp 
-    release/source/offlineGraph.cpp
-)
-
-# Liga as bibliotecas necessárias (OpenCV e Threads)
-target_link_libraries(PenduloApp ${OpenCV_LIBS} pthread)
+# Cria o módulo compartilhado do Python (.so)
+pybind11_add_module(pendulum_tracker release/source/tracker.cpp)
+target_link_libraries(pendulum_tracker PRIVATE ${OpenCV_LIBS})
