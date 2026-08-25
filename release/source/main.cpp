@@ -267,8 +267,8 @@ void frameComputation(const string& whichThread){
     string min = std::to_string(aTime->tm_min);
 
     std::ostringstream oss;
-    oss << "../PendulumCsv/" << year << "_" << (month.length()==1?"0":"") << month << "_" << (day.length()==1?"0":"") << day << "_" << (hour.length()==1?"0":"") << hour << "_" << (min.length()==1?"0":"") << min;
-    
+    oss << "../../CSV/pendulo" << year << "_" << (month.length()==1?"0":"") << month << "_" << (day.length()==1?"0":"") << day << "_" << (hour.length()==1?"0":"") << hour << "_" << (min.length()==1?"0":"") << min;
+
     std::string file_name = oss.str() + "_N.csv";
 
     ofstream txt_file(file_name);
