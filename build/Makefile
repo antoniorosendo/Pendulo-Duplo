@@ -117,89 +117,41 @@ depend:
 .PHONY : depend
 
 #=============================================================================
-# Target rules for targets named PenduloApp
+# Target rules for targets named pendulum_tracker
 
 # Build rule for target.
-PenduloApp: cmake_check_build_system
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 PenduloApp
-.PHONY : PenduloApp
+pendulum_tracker: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 pendulum_tracker
+.PHONY : pendulum_tracker
 
 # fast build rule for target.
-PenduloApp/fast:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/PenduloApp.dir/build.make CMakeFiles/PenduloApp.dir/build
-.PHONY : PenduloApp/fast
+pendulum_tracker/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/pendulum_tracker.dir/build.make CMakeFiles/pendulum_tracker.dir/build
+.PHONY : pendulum_tracker/fast
 
-release/source/calibration.o: release/source/calibration.cpp.o
-.PHONY : release/source/calibration.o
-
-# target to build an object file
-release/source/calibration.cpp.o:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/PenduloApp.dir/build.make CMakeFiles/PenduloApp.dir/release/source/calibration.cpp.o
-.PHONY : release/source/calibration.cpp.o
-
-release/source/calibration.i: release/source/calibration.cpp.i
-.PHONY : release/source/calibration.i
-
-# target to preprocess a source file
-release/source/calibration.cpp.i:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/PenduloApp.dir/build.make CMakeFiles/PenduloApp.dir/release/source/calibration.cpp.i
-.PHONY : release/source/calibration.cpp.i
-
-release/source/calibration.s: release/source/calibration.cpp.s
-.PHONY : release/source/calibration.s
-
-# target to generate assembly for a file
-release/source/calibration.cpp.s:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/PenduloApp.dir/build.make CMakeFiles/PenduloApp.dir/release/source/calibration.cpp.s
-.PHONY : release/source/calibration.cpp.s
-
-release/source/main.o: release/source/main.cpp.o
-.PHONY : release/source/main.o
+release/source/tracker.o: release/source/tracker.cpp.o
+.PHONY : release/source/tracker.o
 
 # target to build an object file
-release/source/main.cpp.o:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/PenduloApp.dir/build.make CMakeFiles/PenduloApp.dir/release/source/main.cpp.o
-.PHONY : release/source/main.cpp.o
+release/source/tracker.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/pendulum_tracker.dir/build.make CMakeFiles/pendulum_tracker.dir/release/source/tracker.cpp.o
+.PHONY : release/source/tracker.cpp.o
 
-release/source/main.i: release/source/main.cpp.i
-.PHONY : release/source/main.i
-
-# target to preprocess a source file
-release/source/main.cpp.i:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/PenduloApp.dir/build.make CMakeFiles/PenduloApp.dir/release/source/main.cpp.i
-.PHONY : release/source/main.cpp.i
-
-release/source/main.s: release/source/main.cpp.s
-.PHONY : release/source/main.s
-
-# target to generate assembly for a file
-release/source/main.cpp.s:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/PenduloApp.dir/build.make CMakeFiles/PenduloApp.dir/release/source/main.cpp.s
-.PHONY : release/source/main.cpp.s
-
-release/source/offlineGraph.o: release/source/offlineGraph.cpp.o
-.PHONY : release/source/offlineGraph.o
-
-# target to build an object file
-release/source/offlineGraph.cpp.o:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/PenduloApp.dir/build.make CMakeFiles/PenduloApp.dir/release/source/offlineGraph.cpp.o
-.PHONY : release/source/offlineGraph.cpp.o
-
-release/source/offlineGraph.i: release/source/offlineGraph.cpp.i
-.PHONY : release/source/offlineGraph.i
+release/source/tracker.i: release/source/tracker.cpp.i
+.PHONY : release/source/tracker.i
 
 # target to preprocess a source file
-release/source/offlineGraph.cpp.i:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/PenduloApp.dir/build.make CMakeFiles/PenduloApp.dir/release/source/offlineGraph.cpp.i
-.PHONY : release/source/offlineGraph.cpp.i
+release/source/tracker.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/pendulum_tracker.dir/build.make CMakeFiles/pendulum_tracker.dir/release/source/tracker.cpp.i
+.PHONY : release/source/tracker.cpp.i
 
-release/source/offlineGraph.s: release/source/offlineGraph.cpp.s
-.PHONY : release/source/offlineGraph.s
+release/source/tracker.s: release/source/tracker.cpp.s
+.PHONY : release/source/tracker.s
 
 # target to generate assembly for a file
-release/source/offlineGraph.cpp.s:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/PenduloApp.dir/build.make CMakeFiles/PenduloApp.dir/release/source/offlineGraph.cpp.s
-.PHONY : release/source/offlineGraph.cpp.s
+release/source/tracker.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/pendulum_tracker.dir/build.make CMakeFiles/pendulum_tracker.dir/release/source/tracker.cpp.s
+.PHONY : release/source/tracker.cpp.s
 
 # Help Target
 help:
@@ -209,16 +161,10 @@ help:
 	@echo "... depend"
 	@echo "... edit_cache"
 	@echo "... rebuild_cache"
-	@echo "... PenduloApp"
-	@echo "... release/source/calibration.o"
-	@echo "... release/source/calibration.i"
-	@echo "... release/source/calibration.s"
-	@echo "... release/source/main.o"
-	@echo "... release/source/main.i"
-	@echo "... release/source/main.s"
-	@echo "... release/source/offlineGraph.o"
-	@echo "... release/source/offlineGraph.i"
-	@echo "... release/source/offlineGraph.s"
+	@echo "... pendulum_tracker"
+	@echo "... release/source/tracker.o"
+	@echo "... release/source/tracker.i"
+	@echo "... release/source/tracker.s"
 .PHONY : help
 
 

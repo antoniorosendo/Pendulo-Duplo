@@ -232,15 +232,6 @@ PYTHON_EXECUTABLE:FILEPATH=/usr/bin/python3
 PYTHON_LIBRARY:FILEPATH=/usr/lib/x86_64-linux-gnu/libpython3.12.so
 
 //Value Computed by CMake
-PenduloTrack_BINARY_DIR:STATIC=/home/antonio/Documents/GitHub/Pendulo-Duplo/build
-
-//Value Computed by CMake
-PenduloTrack_IS_TOP_LEVEL:STATIC=ON
-
-//Value Computed by CMake
-PenduloTrack_SOURCE_DIR:STATIC=/home/antonio/Documents/GitHub/Pendulo-Duplo
-
-//Value Computed by CMake
 pendulum_tracker_BINARY_DIR:STATIC=/home/antonio/Documents/GitHub/Pendulo-Duplo/build
 
 //Value Computed by CMake

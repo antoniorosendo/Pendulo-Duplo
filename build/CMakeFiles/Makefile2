@@ -63,7 +63,7 @@ CMAKE_BINARY_DIR = /home/antonio/Documents/GitHub/Pendulo-Duplo/build
 # Directory level rules for the build root directory
 
 # The main recursive "all" target.
-all: CMakeFiles/PenduloApp.dir/all
+all: CMakeFiles/pendulum_tracker.dir/all
 .PHONY : all
 
 # The main recursive "preinstall" target.
@@ -71,34 +71,34 @@ preinstall:
 .PHONY : preinstall
 
 # The main recursive "clean" target.
-clean: CMakeFiles/PenduloApp.dir/clean
+clean: CMakeFiles/pendulum_tracker.dir/clean
 .PHONY : clean
 
 #=============================================================================
-# Target rules for target CMakeFiles/PenduloApp.dir
+# Target rules for target CMakeFiles/pendulum_tracker.dir
 
 # All Build rule for target.
-CMakeFiles/PenduloApp.dir/all:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/PenduloApp.dir/build.make CMakeFiles/PenduloApp.dir/depend
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/PenduloApp.dir/build.make CMakeFiles/PenduloApp.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/antonio/Documents/GitHub/Pendulo-Duplo/build/CMakeFiles --progress-num=1,2,3,4 "Built target PenduloApp"
-.PHONY : CMakeFiles/PenduloApp.dir/all
+CMakeFiles/pendulum_tracker.dir/all:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/pendulum_tracker.dir/build.make CMakeFiles/pendulum_tracker.dir/depend
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/pendulum_tracker.dir/build.make CMakeFiles/pendulum_tracker.dir/build
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/antonio/Documents/GitHub/Pendulo-Duplo/build/CMakeFiles --progress-num=1,2 "Built target pendulum_tracker"
+.PHONY : CMakeFiles/pendulum_tracker.dir/all
 
 # Build rule for subdir invocation for target.
-CMakeFiles/PenduloApp.dir/rule: cmake_check_build_system
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/antonio/Documents/GitHub/Pendulo-Duplo/build/CMakeFiles 4
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 CMakeFiles/PenduloApp.dir/all
+CMakeFiles/pendulum_tracker.dir/rule: cmake_check_build_system
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/antonio/Documents/GitHub/Pendulo-Duplo/build/CMakeFiles 2
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 CMakeFiles/pendulum_tracker.dir/all
 	$(CMAKE_COMMAND) -E cmake_progress_start /home/antonio/Documents/GitHub/Pendulo-Duplo/build/CMakeFiles 0
-.PHONY : CMakeFiles/PenduloApp.dir/rule
+.PHONY : CMakeFiles/pendulum_tracker.dir/rule
 
 # Convenience name for target.
-PenduloApp: CMakeFiles/PenduloApp.dir/rule
-.PHONY : PenduloApp
+pendulum_tracker: CMakeFiles/pendulum_tracker.dir/rule
+.PHONY : pendulum_tracker
 
 # clean rule for target.
-CMakeFiles/PenduloApp.dir/clean:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/PenduloApp.dir/build.make CMakeFiles/PenduloApp.dir/clean
-.PHONY : CMakeFiles/PenduloApp.dir/clean
+CMakeFiles/pendulum_tracker.dir/clean:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/pendulum_tracker.dir/build.make CMakeFiles/pendulum_tracker.dir/clean
+.PHONY : CMakeFiles/pendulum_tracker.dir/clean
 
 #=============================================================================
 # Special targets to cleanup operation of make.

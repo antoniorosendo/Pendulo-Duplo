@@ -1,3 +1,0 @@
-/home/antonio/Documents/GitHub/Pendulo-Duplo/build_py/CMakeFiles/pendulum_tracker.dir
-/home/antonio/Documents/GitHub/Pendulo-Duplo/build_py/CMakeFiles/edit_cache.dir
-/home/antonio/Documents/GitHub/Pendulo-Duplo/build_py/CMakeFiles/rebuild_cache.dir
