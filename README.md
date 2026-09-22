@@ -1,7 +1,7 @@
 # Sistema de Rastreamento de Pêndulo Duplo
 
 ## Sobre o Projeto
-Este repositório abriga o desenvolvimento de um sistema de rastreamento computacional de alta performance para a análise dinâmica de um **pêndulo duplo físico**, desenvolvido no âmbito de uma **Iniciação Científica (IC)** na Faculdade de Tecnologia da Universidade Estadual de Campinas (FT Unicamp). 
+Este repositório abriga o desenvolvimento de um sistema de rastreamento computacional de alta performance para a análise dinâmica de um **pêndulo duplo físico**, desenvolvido no âmbito de uma **Iniciação Científica (IC)** na Faculdade de Tecnologia da Universidade Estadual de Campinas (FT Unicamp).
 
 O projeto moderniza uma aplicação legada de console em C++, transformando-a em uma interface gráfica moderna, intuitiva e orientada a dados, combinando a flexibilidade do Python com a velocidade de processamento do C++.
 
@@ -36,3 +36,30 @@ Este projeto evoluiu a partir de uma ferramenta acadêmica de rastreamento desen
 Certifique-se de possuir o compilador C++ (`g++`), CMake e as bibliotecas de desenvolvimento do OpenCV e Pybind11 instaladas no seu ambiente Linux (Ubuntu):
 ```bash
 sudo apt install build-essential cmake libopencv-dev pybind11-dev python3-tk python3-pil.imagetk
+```
+
+### 2. Instalação das Dependências Python
+```bash
+pip3 install customtkinter opencv-python matplotlib psutil pybind11 --break-system-packages
+```
+
+### 3. Compilação do Motor C++
+Navegue até a pasta de construção e compile o módulo híbrido:
+```bash
+cd build
+rm -rf CMakeCache.txt CMakeFiles/
+cmake ..
+make
+```
+*(Certifique-se de copiar o arquivo `.so` gerado para a pasta onde se encontra o script da interface).*
+
+### 4. Execução da Aplicação
+```bash
+cd release/source
+python3 gui.py
+```
+*(Nota: Pressione **ESC** a qualquer momento para sair do modo de tela cheia).*
+
+---
+
+Desenvolvido por Antonio Carlos Rosendo da Silva — FT Unicamp
