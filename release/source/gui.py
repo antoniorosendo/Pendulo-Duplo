@@ -20,7 +20,7 @@ class App(ctk.CTk):
         self.geometry("900x600")
 
         # Inicializa o motor C++
-        self.tracker = pendulum_tracker.PendulumTracker("../../images/template1.jpg", "../../images/template2.jpg")
+        self.tracker = pendulum_tracker.PendulumTracker()
         
         # Inicia a câmera IMEDIATAMENTE ao abrir o programa
         self.cap = cv2.VideoCapture(0)

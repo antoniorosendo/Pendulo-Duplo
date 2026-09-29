@@ -9,6 +9,7 @@
 #include <iostream>
 #include <string>
 #include "headers/guiFunctions.h"
+#include "headers/color_tracker.hpp"
 #include <fstream>
 
 #define PI 3.14159265
@@ -44,20 +45,14 @@ void checkTrackbar(int trackPos, void* data) {
 
 /// Global Variables
 Mat frame;
-Mat templ1; // Template para a massa 1
-Mat templ2; // Template para a massa 2
 double myMatrix[3][3];
 
 String image_window = "Window";
-Mat result_A;
-Mat result_B;
 
 // Filas para o gráfico de desenho
 std::queue<Point2d> pointsVector1;
 std::queue<Point2d> pointsVector2;
 Mat plot_image;
-
-int match_method = 5; // CCOEFF_NORMED (ZNCC)
 
 /// Filas atualizadas: tuple agora carrega (Mat, int, double, x1, y1, x2, y2)
 std::queue<std::tuple<Mat, int, double>> frameQueue_A;
@@ -82,8 +77,6 @@ void frameComputation(const string& whichThread);
 int main(int argc, char *argv[]) {
 
     string calibrationFile = "calibration.txt";
-    string templateFile1 = "../images/template1.jpg";
-    string templateFile2 = "../images/template2.jpg";
 
     if (argc > 2) {
         cerr << "Too many arguments" << endl;
@@ -99,15 +92,6 @@ int main(int argc, char *argv[]) {
 
     typedef std::chrono::high_resolution_clock Time;
     typedef std::chrono::duration<double> TimeCast;
-
-    /// Load templates
-    if(fileExist(templateFile1) && fileExist(templateFile2)) {
-        templ1 = imread(templateFile1, 1);
-        templ2 = imread(templateFile2, 1);
-    } else {
-        cerr << "ERROR. Can't find template files \n Closing..." << endl;
-        exit(-1);
-    }
 
     //WEBCAM
     VideoCapture capture(0, cv::CAP_V4L2); 
@@ -176,45 +160,27 @@ int main(int argc, char *argv[]) {
     return 0;
 }
 
+static const auto RED_RANGES  = makeRanges(165, 120, 70, 10, 255, 255);
+static const auto BLUE_RANGES = makeRanges(95, 120, 50, 130, 255, 255);
 
-tuple<double, double, double, double> MatchingMethod( int, void*, const string& whichThread, Mat croppedFrame) {
-    Mat *result_X;
-    if(whichThread == "threadA") result_X = &result_A;
-    else result_X = &result_B;
+tuple<double, double, double, double> MatchingMethod(int, void*, const string&, Mat croppedFrame) {
+    Mat hsv;
+    cvtColor(croppedFrame, hsv, COLOR_BGR2HSV);
 
-    /// ---- MASSA 1 ----
-    int result_cols1 = croppedFrame.cols - templ1.cols + 1;
-    int result_rows1 = croppedFrame.rows - templ1.rows + 1;
-    result_X->create(result_rows1, result_cols1, CV_32FC1);
-    matchTemplate( croppedFrame, templ1, *result_X, match_method );
-    normalize( *result_X, *result_X, 0, 1, NORM_MINMAX, -1, Mat() );
+    Point2d c1(0, 0), c2(0, 0);
+    bool ok1 = findBlob(colorMask(hsv, RED_RANGES),  80, 5000, 0.6, c1);
+    bool ok2 = findBlob(colorMask(hsv, BLUE_RANGES), 80, 5000, 0.6, c2);
 
-    double minVal1, maxVal1; Point minLoc1, maxLoc1, matchLoc1;
-    minMaxLoc( *result_X, &minVal1, &maxVal1, &minLoc1, &maxLoc1, Mat() );
-    matchLoc1 = (match_method == TM_SQDIFF || match_method == TM_SQDIFF_NORMED) ? minLoc1 : maxLoc1;
+    if (ok1) {
+        rectangle(croppedFrame, Point(c1.x - 25, c1.y - 25), Point(c1.x + 25, c1.y + 25), Scalar(0, 0, 255), 2);
+        circle(croppedFrame, c1, 3, Scalar(0, 255, 0), -1);
+    }
+    if (ok2) {
+        rectangle(croppedFrame, Point(c2.x - 25, c2.y - 25), Point(c2.x + 25, c2.y + 25), Scalar(255, 0, 0), 2);
+        circle(croppedFrame, c2, 3, Scalar(0, 255, 0), -1);
+    }
 
-    /// ---- MASSA 2 ----
-    int result_cols2 = croppedFrame.cols - templ2.cols + 1;
-    int result_rows2 = croppedFrame.rows - templ2.rows + 1;
-    result_X->create(result_rows2, result_cols2, CV_32FC1);
-    matchTemplate( croppedFrame, templ2, *result_X, match_method );
-    normalize( *result_X, *result_X, 0, 1, NORM_MINMAX, -1, Mat() );
-
-    double minVal2, maxVal2; Point minLoc2, maxLoc2, matchLoc2;
-    minMaxLoc( *result_X, &minVal2, &maxVal2, &minLoc2, &maxLoc2, Mat() );
-    matchLoc2 = (match_method == TM_SQDIFF || match_method == TM_SQDIFF_NORMED) ? minLoc2 : maxLoc2;
-
-    /// Desenhando na imagem de saída
-    rectangle( croppedFrame, matchLoc1, Point( matchLoc1.x + templ1.cols , matchLoc1.y + templ1.rows ), Scalar(0,0,255), 2, 8, 0 ); // Vermelho
-    rectangle( croppedFrame, matchLoc2, Point( matchLoc2.x + templ2.cols , matchLoc2.y + templ2.rows ), Scalar(255,0,0), 2, 8, 0 ); // Azul
-    
-    circle(croppedFrame, Point(matchLoc1.x + templ1.cols/2, matchLoc1.y + templ1.rows/2), 0, Scalar(0,255,0), 5);
-    circle(croppedFrame, Point(matchLoc2.x + templ2.cols/2, matchLoc2.y + templ2.rows/2), 0, Scalar(0,255,0), 5);
-
-    return std::make_tuple(
-        matchLoc1.x + templ1.cols/2.0, matchLoc1.y + templ1.rows/2.0,
-        matchLoc2.x + templ2.cols/2.0, matchLoc2.y + templ2.rows/2.0
-    );
+    return std::make_tuple(c1.x, c1.y, c2.x, c2.y);
 }
 
 void frameComputation(const string& whichThread){
@@ -304,10 +270,6 @@ void frameComputation(const string& whichThread){
 
         tie(extracted_Mat_X, frameNumber_X, elapsed_X, pos_X1, pos_Y1, pos_X2, pos_Y2) = resultQueue_X->front();
         resultQueue_X->pop();
-
-        // Salva os 4 dados no CSV
-        txt_file << fixed << elapsed_X << ";" << (int)(pos_X1) << ";" << (int)(pos_Y1) << ";" << (int)(pos_X2) << ";" << (int)(pos_Y2) << "\n";
-        txt_file.flush();
         
         expectedFrameNumber++;
 
