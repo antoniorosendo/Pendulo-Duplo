@@ -506,4 +506,5 @@ CMakeFiles/pendulum_tracker.dir/release/source/tracker.cpp.o: \
  /usr/include/opencv4/opencv2/stitching/detail/camera.hpp \
  /usr/include/opencv4/opencv2/video.hpp \
  /usr/include/opencv4/opencv2/video/tracking.hpp \
- /usr/include/opencv4/opencv2/video/background_segm.hpp
+ /usr/include/opencv4/opencv2/video/background_segm.hpp \
+ /home/antonio/Documents/Pendulo-Duplo/release/source/../headers/color_tracker.hpp
