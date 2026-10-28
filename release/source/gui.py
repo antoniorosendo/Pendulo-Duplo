@@ -7,6 +7,8 @@ import psutil
 import time
 import csv
 from datetime import datetime
+import os
+import threading
 
 class App(ctk.CTk):
     def __init__(self):
@@ -36,7 +38,19 @@ class App(ctk.CTk):
         # Histórico de Hardware
         self.start_time = 0
         self.time_history = []
-        self.thread_history = [[], [], [], []] # 4 listas para 4 threads
+
+        # Armazenamento das threads
+        MAX_THREADS = 8   # arquitetura do projeto: 1 captura + 6 processamento + 1 escrita
+        self.process = psutil.Process(os.getpid())
+
+        # O TID identifica uma thread do sistema operacional.
+        self.main_tid = threading.get_native_id()
+
+        self.thread_usage = {}
+        self.previous_thread_times = {}
+        self.previous_sample_time = time.perf_counter()
+        
+        self.thread_history = [[] for _ in range(self.num_threads)]
 
 
 
@@ -67,7 +81,7 @@ class App(ctk.CTk):
         self.thread_bars = []
         self.thread_labels = []
         
-        for i in range(4):
+        for i in range(self.num_threads): 
             frame_bar = ctk.CTkFrame(self.sidebar, fg_color="transparent")
             frame_bar.pack(fill="x", padx=10, pady=2)
             
@@ -173,25 +187,48 @@ class App(ctk.CTk):
         self.after(15, self.update_frame)
 
     def update_system_stats(self):
-        cpu_percentages = psutil.cpu_percent(percpu=True)
-        
-        current_time = 0
-        if self.mode == "TRACKING" and self.start_time > 0:
-            current_time = time.time() - self.start_time
-            self.time_history.append(current_time)
-
-        for i in range(min(4, len(cpu_percentages))):
-            usage = cpu_percentages[i]
-            
-            self.thread_labels[i].configure(text=f"T{i}: {int(usage)}%")
+        self.collect_thread_usage()
+    
+        for i, tid in enumerate(self.thread_ids):
+            usage = self.thread_usage.get(tid, 0.0)
+    
+            self.thread_labels[i].configure(
+                text=f"T{i}: {usage:.1f}%"
+            )
+    
             color = "#ff3333" if usage > 70 else "#00a86b"
             self.thread_bars[i].configure(progress_color=color)
             self.thread_bars[i].set(usage / 100.0)
-            
-            if self.mode == "TRACKING" and self.start_time > 0:
+    
+            if self.mode == "TRACKING":
                 self.thread_history[i].append(usage)
-                
+    
         self.after(500, self.update_system_stats)
+
+    def collect_thread_usage(self):
+        now = time.perf_counter()
+        elapsed = now - self.previous_sample_time
+
+        if elapsed <= 0:
+            return
+
+        current = {
+            thread.id: thread.user_time + thread.system_time
+            for thread in self.process.threads()
+        }
+
+        usage = {}
+
+        for tid, cpu_time in current.items():
+            previous = self.previous_thread_times.get(tid)
+
+            if previous is not None:
+                delta_cpu = max(0.0, cpu_time - previous)
+                usage[tid] = min(100.0, 100.0 * delta_cpu / elapsed)
+
+        self.previous_thread_times = current
+        self.previous_sample_time = now
+        self.thread_usage = usage
 
     def plot_graph(self):
         if not self.history_x1 and not self.history_x2:
@@ -216,10 +253,10 @@ class App(ctk.CTk):
         plt.style.use('dark_background')
         plt.figure(figsize=(8, 6))
         
-        colors = ['#00a86b', '#ff3333', '#3399ff', '#ffaa00']
-        for i in range(min(4, len(self.thread_history))):
+        cmap = plt.get_cmap("tab10")
+        for i in range(self.num_threads):
             if self.thread_history[i]:
-                plt.plot(self.time_history, self.thread_history[i], color=colors[i], label=f'Thread {i}')
+                plt.plot(self.time_history, self.thread_history[i], color=cmap(i), label=f'Thread {i}')
                 
         plt.title('GRAFICO DE USO DAS THREADS NO TEMPO')
         plt.xlabel('Tempo (s)')
@@ -266,20 +303,14 @@ class App(ctk.CTk):
                 writer = csv.writer(file, delimiter=';') # Ponto e vírgula facilita abrir no Excel em PT-BR
                 
                 # Escreve o cabeçalho
-                writer.writerow(["Tempo (s)", "Thread 0 (%)", "Thread 1 (%)", "Thread 2 (%)", "Thread 3 (%)"])
-                
-                # Escreve os dados linha por linha
+                writer.writerow(["Tempo (s)"] + [f"Thread {i} (%)" for i in range(self.num_threads)])
+
                 for i in range(len(self.time_history)):
-                    # Formata o tempo com duas casas decimais
                     t = f"{self.time_history[i]:.2f}".replace('.', ',')
-                    
-                    # Pega o valor de cada thread (ou 0 se houver algum erro de sincronia)
-                    t0 = self.thread_history[0][i] if i < len(self.thread_history[0]) else 0
-                    t1 = self.thread_history[1][i] if i < len(self.thread_history[1]) else 0
-                    t2 = self.thread_history[2][i] if i < len(self.thread_history[2]) else 0
-                    t3 = self.thread_history[3][i] if i < len(self.thread_history[3]) else 0
-                    
-                    writer.writerow([t, t0, t1, t2, t3])
+                    row = [t]
+                    for k in range(self.num_threads):
+                        row.append(self.thread_history[k][i] if i < len(self.thread_history[k]) else 0)
+                    writer.writerow(row)
                     
             print(f"Sucesso: Arquivo de threads salvo em {filename}")
         except Exception as e:

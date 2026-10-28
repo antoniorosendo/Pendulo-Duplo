@@ -4,6 +4,8 @@
 #include <thread>
 #include <mutex>
 #include <condition_variable>
+#include <queue>
+#include <array>
 #include <tuple>
 #include <time.h>
 #include <iostream>
@@ -16,6 +18,12 @@
 
 using namespace std;
 using namespace cv;
+
+// ---------------------------------------------------------------------------
+// Arquitetura de 8 threads:
+//   1 thread de captura (main)  +  NUM_WORKERS de processamento  +  1 de escrita
+// ---------------------------------------------------------------------------
+constexpr int NUM_WORKERS = 6;
 
 bool is_graph_activated = false;
 int graphPoints = 100;
@@ -54,23 +62,25 @@ std::queue<Point2d> pointsVector1;
 std::queue<Point2d> pointsVector2;
 Mat plot_image;
 
-/// Filas atualizadas: tuple agora carrega (Mat, int, double, x1, y1, x2, y2)
-std::queue<std::tuple<Mat, int, double>> frameQueue_A;
-std::queue<std::tuple<Mat, int, double>> frameQueue_B;
+// (Mat, número do frame, tempo)
+using FrameInfo  = std::tuple<Mat, int, double>;
+// (Mat, número do frame, tempo, x1, y1, x2, y2)
+using ResultInfo = std::tuple<Mat, int, double, double, double, double, double>;
 
-std::queue<tuple<Mat, int, double, double, double, double, double>> resultQueue_A;
-std::queue<tuple<Mat, int, double, double, double, double, double>> resultQueue_B;
-
-struct request{
+// Cada worker tem suas próprias filas e seu próprio mutex.
+// O mutex protege as DUAS filas (frames e results).
+struct Worker {
+    std::queue<FrameInfo>  frames;
+    std::queue<ResultInfo> results;
     std::mutex mx;
-    std::condition_variable cv;
+    std::condition_variable cvFrames;   // avisa o worker: chegou frame novo
+    std::condition_variable cvResults;  // avisa o escritor: resultado pronto
 };
-request requestA;
-request requestB;
+std::array<Worker, NUM_WORKERS> workers;
 
 /// Function Headers
 tuple<double, double, double, double> MatchingMethod( int, void*, const string&, Mat croppedFrame);
-void frameComputation(const string& whichThread);
+void frameComputation(int workerId);
 [[noreturn]] void writeFile(const bool perspectiveCorrection);
 
 /** @function main */
@@ -89,6 +99,10 @@ int main(int argc, char *argv[]) {
         cerr << argv[1] << " is an unknown option" << endl;
         exit(1);
     }
+
+    // Cada worker já é uma thread nossa: impede o OpenCV de criar threads
+    // internas extras, para o programa ter exatamente 8 threads de trabalho.
+    cv::setNumThreads(1);
 
     typedef std::chrono::high_resolution_clock Time;
     typedef std::chrono::duration<double> TimeCast;
@@ -114,19 +128,16 @@ int main(int argc, char *argv[]) {
     ///ask if the user wants perspectiveCorrection (Simulando 'n' por padrão para teste)
     bool perspectiveCorrection = false; 
 
-    /// starting the two threads that handle the frame computation here
-    std::thread thread1 (frameComputation, "threadA");
-    std::thread thread2 (frameComputation, "threadB");
-    std::thread thread3 (writeFile, perspectiveCorrection);
-    thread1.detach();
-    thread2.detach();
-    thread3.detach();
+    /// starting the NUM_WORKERS threads that handle the frame computation + 1 writer thread
+    for (int i = 0; i < NUM_WORKERS; i++) {
+        std::thread(frameComputation, i).detach();
+    }
+    std::thread(writeFile, perspectiveCorrection).detach();
 
     auto startTime = Time::now();
     auto newTime = Time::now();
     TimeCast elapsed = newTime - startTime;
     bool start = false;
-    std::tuple<Mat, int, double> frameInfo;
     int frame_number = 0;
 
     plot_image = cv::Scalar(255, 255, 255);
@@ -145,10 +156,13 @@ int main(int argc, char *argv[]) {
         }
         elapsed = newTime - startTime;
 
-        frameInfo = std::make_tuple(frame.clone(), frame_number, elapsed.count());
-
-        if (frame_number % 2 == 0) frameQueue_A.push(frameInfo);
-        else frameQueue_B.push(frameInfo);
+        // Distribui os frames em rodízio entre os workers: 0,1,2,3,4,5,0,1,...
+        Worker& w = workers[frame_number % NUM_WORKERS];
+        {
+            std::lock_guard<std::mutex> lock(w.mx);
+            w.frames.push(std::make_tuple(frame.clone(), frame_number, elapsed.count()));
+        }
+        w.cvFrames.notify_one();
 
         frame_number++;
         // Para não ler o vídeo mais rápido que as threads processam (simulando a câmera)
@@ -183,42 +197,36 @@ tuple<double, double, double, double> MatchingMethod(int, void*, const string&, 
     return std::make_tuple(c1.x, c1.y, c2.x, c2.y);
 }
 
-void frameComputation(const string& whichThread){
-    Mat myFrame;
-    int myFrameNumber;
-    double ourElapsed;
-    std::queue<std::tuple<Mat, int, double>> *frameQueue_X;
-    std::queue<tuple<Mat, int, double, double, double, double, double>> *resultQueue_X;
-    
-    double pos_X1, pos_Y1, pos_X2, pos_Y2;
-    request *requestX;
-
-    if(whichThread == "threadA"){
-        frameQueue_X = &frameQueue_A;
-        resultQueue_X = &resultQueue_A;
-        requestX = &requestA;
-    } else {
-        frameQueue_X = &frameQueue_B;
-        resultQueue_X = &resultQueue_B;
-        requestX = &requestB;
-    }
+void frameComputation(int workerId){
+    Worker& w = workers[workerId];
+    const string name = "worker" + std::to_string(workerId);
 
     while(true){
-        if(!frameQueue_X->empty()){
-            tie(myFrame, myFrameNumber, ourElapsed) = frameQueue_X->front();
-            frameQueue_X->pop();
-
-            if (myFrame.empty()) break;
-
-            tuple<double, double, double, double> myResult;
-            myResult = MatchingMethod(0, 0, whichThread, myFrame);
-            tie(pos_X1, pos_Y1, pos_X2, pos_Y2) = myResult;
-
-            resultQueue_X->push(std::make_tuple(myFrame.clone(), myFrameNumber, ourElapsed, pos_X1, pos_Y1, pos_X2, pos_Y2));
-
-            std::lock_guard<std::mutex> lock(requestX->mx);
-            requestX->cv.notify_one();
+        FrameInfo info;
+        {
+            // Dorme até chegar um frame (nada de espera ativa gastando 100% de CPU)
+            std::unique_lock<std::mutex> lock(w.mx);
+            w.cvFrames.wait(lock, [&]{ return !w.frames.empty(); });
+            info = std::move(w.frames.front());
+            w.frames.pop();
         }
+
+        Mat myFrame;
+        int myFrameNumber;
+        double ourElapsed;
+        tie(myFrame, myFrameNumber, ourElapsed) = info;
+
+        if (myFrame.empty()) break;
+
+        double pos_X1, pos_Y1, pos_X2, pos_Y2;
+        tie(pos_X1, pos_Y1, pos_X2, pos_Y2) = MatchingMethod(0, 0, name, myFrame);
+
+        {
+            std::lock_guard<std::mutex> lock(w.mx);
+            w.results.push(std::make_tuple(myFrame, myFrameNumber, ourElapsed,
+                                           pos_X1, pos_Y1, pos_X2, pos_Y2));
+        }
+        w.cvResults.notify_one();
     }
 }
 
@@ -246,7 +254,6 @@ void frameComputation(const string& whichThread){
     int frameNumber_X = -1;
     double elapsed_X = -1.0;
     double pos_X1, pos_Y1, pos_X2, pos_Y2;
-    std::queue<tuple<Mat, int, double, double, double, double, double>> *resultQueue_X;
     Mat extracted_Mat_X;
 
     namedWindow(image_window, WINDOW_GUI_EXPANDED);
@@ -258,18 +265,14 @@ void frameComputation(const string& whichThread){
     createTrackbar("Number of graph points", image_window, ptrGraphPoints, 1000, checkTrackbar, NULL);
 
     while(true){
-        if (expectedFrameNumber % 2 == 0){
-            std::unique_lock<std::mutex> lock(requestA.mx);
-            requestA.cv.wait(lock, []{return !resultQueue_A.empty();});
-            resultQueue_X = &resultQueue_A;
-        } else {
-            std::unique_lock<std::mutex> lock(requestB.mx);
-            requestB.cv.wait(lock, []{return !resultQueue_B.empty();});
-            resultQueue_X = &resultQueue_B;
+        // Lê os resultados NA ORDEM dos frames: o frame n está sempre no worker n % NUM_WORKERS
+        Worker& w = workers[expectedFrameNumber % NUM_WORKERS];
+        {
+            std::unique_lock<std::mutex> lock(w.mx);
+            w.cvResults.wait(lock, [&]{ return !w.results.empty(); });
+            tie(extracted_Mat_X, frameNumber_X, elapsed_X, pos_X1, pos_Y1, pos_X2, pos_Y2) = w.results.front();
+            w.results.pop();
         }
-
-        tie(extracted_Mat_X, frameNumber_X, elapsed_X, pos_X1, pos_Y1, pos_X2, pos_Y2) = resultQueue_X->front();
-        resultQueue_X->pop();
         
         expectedFrameNumber++;
 

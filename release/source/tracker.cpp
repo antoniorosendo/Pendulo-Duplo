@@ -2,6 +2,12 @@
 #include <pybind11/numpy.h>
 #include <opencv2/opencv.hpp>
 #include "../headers/color_tracker.hpp"
+#include <thread>
+#include <mutex>
+#include <condition_variable>
+#include <queue>
+#include <array>
+#include <chrono>
 
 namespace py = pybind11;
 
@@ -14,6 +20,23 @@ private:
         py::buffer_info buf = a.request();
         return cv::Mat((int)buf.shape[0], (int)buf.shape[1], CV_8UC3, (unsigned char*)buf.ptr);
     }
+
+    //Um frame que aguarda processamento pelos workers
+    struct FrameTask {
+        cv::Mat frame;
+        int frame_id;
+        double elapsed;
+    };
+
+    //Resultado do rastreamento de um frame
+    struct TrackingResult {
+        int frame_id;
+        double elapsed;
+        double x1, y1;
+        double x2, y2;
+    };
+
+    
 
 public:
     PendulumTracker() {
