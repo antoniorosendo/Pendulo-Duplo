@@ -50,6 +50,7 @@ class App(ctk.CTk):
         self.previous_thread_times = {}
         self.previous_sample_time = time.perf_counter()
         
+        self.num_threads = MAX_THREADS
         self.thread_history = [[] for _ in range(self.num_threads)]
 
 
@@ -105,7 +106,9 @@ class App(ctk.CTk):
         # Tranca de segurança para liberar a câmera ao fechar a janela (evita processos fantasmas)
         self.protocol("WM_DELETE_WINDOW", self.on_closing)
 
-        # Inicia os loops
+        # Inicia o monitoramento com a thread principal; outras TIDs serão
+        # descobertas dinamicamente pelo psutil conforme surgirem no processo.
+        self.thread_ids = [self.main_tid]
         self.update_system_stats()
         self.update_frame()
 
@@ -216,6 +219,13 @@ class App(ctk.CTk):
             thread.id: thread.user_time + thread.system_time
             for thread in self.process.threads()
         }
+
+        # Descobre TIDs novos até preencher as oito posições planejadas.
+        # A ordem é de descoberta, não uma identificação garantida da função
+        # de cada thread (captura, workers ou escrita).
+        for tid in current:
+            if tid not in self.thread_ids and len(self.thread_ids) < self.num_threads:
+                self.thread_ids.append(tid)
 
         usage = {}
 
