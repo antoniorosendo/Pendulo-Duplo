@@ -30,8 +30,8 @@ private:
     struct TrackingResult {
         int frame_id;
         double elapsed;
-        double x1, y1;
-        double x2, y2;
+        double x1_raw, y1_raw, x2_raw, y2_raw; // Para o OpenCV/GUI
+        double x1, y1, x2, y2;                 // Calibradas para o CSV/Gráfico
     };
 
     static constexpr std::size_t NUM_WORKERS = 6;
@@ -61,6 +61,11 @@ private:
     
     std::string csv_filename;
 
+    double calib_x0 = 0, calib_y0 = 0;
+    double calib_cos = 1.0, calib_sin = 0.0;
+    bool is_calibrated = false;
+    std::mutex calib_mutex;
+
     std::mutex config_mutex;
     std::vector<HSVRange> redRanges, blueRanges;
     double minArea = 80, maxArea = 5000, minCircularity = 0.6;
@@ -78,19 +83,32 @@ private:
         );
     }
 
+    cv::Point2d apply_calibration(const cv::Point2d& pt) {
+        std::lock_guard<std::mutex> lock(calib_mutex);
+        if (!is_calibrated) return pt;
+        
+        // 1. Translação
+        double xt = pt.x - calib_x0;
+        double yt = pt.y - calib_y0;
+        
+        // 2. Rotação
+        double xr = xt * calib_cos - yt * calib_sin;
+        double yr = xt * calib_sin + yt * calib_cos;
+        
+        // 3. Inversão do Eixo Y
+        return cv::Point2d(xr, -yr); 
+    }
+
     TrackingResult process_frame(const FrameTask& task) {
-        TrackingResult result{task.frame_id, task.elapsed, 0, 0, 0, 0};
+        TrackingResult result{task.frame_id, task.elapsed, 0,0,0,0, 0,0,0,0};
         if (task.frame.empty()) return result;
 
         std::vector<HSVRange> red_ranges, blue_ranges;
         double min_area, max_area, min_circularity;
         {
             std::lock_guard<std::mutex> lock(config_mutex);
-            red_ranges = redRanges;
-            blue_ranges = blueRanges;
-            min_area = minArea;
-            max_area = maxArea;
-            min_circularity = minCircularity;
+            red_ranges = redRanges; blue_ranges = blueRanges;
+            min_area = minArea; max_area = maxArea; min_circularity = minCircularity;
         }
 
         cv::Mat hsv;
@@ -98,10 +116,14 @@ private:
 
         cv::Point2d center;
         if (findBlob(colorMask(hsv, red_ranges), min_area, max_area, min_circularity, center)) {
-            result.x1 = center.x; result.y1 = center.y;
+            result.x1_raw = center.x; result.y1_raw = center.y;
+            cv::Point2d calib = apply_calibration(center);
+            result.x1 = calib.x; result.y1 = calib.y;
         }
         if (findBlob(colorMask(hsv, blue_ranges), min_area, max_area, min_circularity, center)) {
-            result.x2 = center.x; result.y2 = center.y;
+            result.x2_raw = center.x; result.y2_raw = center.y;
+            cv::Point2d calib = apply_calibration(center);
+            result.x2 = calib.x; result.y2 = calib.y;
         }
         return result;
     }
@@ -185,6 +207,25 @@ public:
         blueRanges = makeRanges(95, 120, 50, 130, 255, 255);
     }
 
+    void set_calibration(double x_orig, double y_orig, double x_align, double y_align) {
+        std::lock_guard<std::mutex> lock(calib_mutex);
+        calib_x0 = x_orig;
+        calib_y0 = y_orig;
+        
+        double dx = x_align - x_orig;
+        double dy = y_align - y_orig;
+        double L = std::sqrt(dx*dx + dy*dy);
+        
+        if (L > 0) {
+            calib_sin = dx / L;
+            calib_cos = dy / L;
+            is_calibrated = true;
+        } else {
+            is_calibrated = false;
+            calib_cos = 1.0; calib_sin = 0.0;
+        }
+    }
+
     ~PendulumTracker() {
         stop_tracking();
     }
@@ -221,17 +262,6 @@ public:
             frame_queue.push(FrameTask{std::move(owned_frame), frame_id, elapsed});
         }
         frame_available.notify_one();
-    }
-
-    py::list get_latest_results() {
-        py::list out;
-        std::lock_guard<std::mutex> lock(gui_mutex);
-        while (!gui_queue.empty()) {
-            auto r = gui_queue.front();
-            gui_queue.pop();
-            out.append(py::make_tuple(r.frame_id, r.elapsed, r.x1, r.y1, r.x2, r.y2));
-        }
-        return out;
     }
 
     void stop_tracking() {
@@ -289,6 +319,19 @@ public:
         py::array_t<unsigned char> ba({b.rows, b.cols}, b.data);
         return py::make_tuple(ra, ba);
     }
+
+    py::list get_latest_results() {
+        py::list out;
+        std::lock_guard<std::mutex> lock(gui_mutex);
+        while (!gui_queue.empty()) {
+            auto r = gui_queue.front();
+            gui_queue.pop();
+            out.append(py::make_tuple(r.frame_id, r.elapsed, 
+                                      r.x1_raw, r.y1_raw, r.x2_raw, r.y2_raw, 
+                                      r.x1, r.y1, r.x2, r.y2));
+        }
+        return out;
+    }
 };
 
 PYBIND11_MODULE(pendulum_tracker, m) {
@@ -302,5 +345,6 @@ PYBIND11_MODULE(pendulum_tracker, m) {
         .def("set_red_range", &PendulumTracker::set_red_range)
         .def("set_blue_range", &PendulumTracker::set_blue_range)
         .def("set_blob_filters", &PendulumTracker::set_blob_filters)
-        .def("debug_masks", &PendulumTracker::debug_masks);
+        .def("debug_masks", &PendulumTracker::debug_masks)
+        .def("set_calibration", &PendulumTracker::set_calibration);
 }

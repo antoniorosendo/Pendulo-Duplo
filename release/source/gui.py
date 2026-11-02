@@ -34,6 +34,9 @@ class App(ctk.CTk):
         self.time_history = []
         self.thread_time_history = []
 
+        self.calib_orig = None
+        self.calib_align = None
+
         MAX_THREADS = 8   
         self.process = psutil.Process(os.getpid())
         self.main_tid = threading.get_native_id()
@@ -58,6 +61,9 @@ class App(ctk.CTk):
 
         self.btn_stop = ctk.CTkButton(self.sidebar, text="STOP", fg_color="red", command=self.stop_video)
         self.btn_stop.pack(padx=20, pady=10)
+
+        self.btn_calib = ctk.CTkButton(self.sidebar, text="Calibrar Eixos", fg_color="orange", command=self.start_calibration)
+        self.btn_calib.pack(padx=20, pady=10)
 
         self.btn_plot = ctk.CTkButton(self.sidebar, text="Gráfico do Pêndulo", fg_color="blue", command=self.plot_graph)
         self.btn_plot.pack(padx=20, pady=10)
@@ -95,6 +101,7 @@ class App(ctk.CTk):
         self.protocol("WM_DELETE_WINDOW", self.on_closing)
         self.update_system_stats()
         self.update_frame()
+        self.video_label.bind("<Button-1>", self.on_video_click)
 
     def start_video(self):
         if self.mode == "PREVIEW":
@@ -135,6 +142,16 @@ class App(ctk.CTk):
                 if self.mode == "PREVIEW":
                     cv2.putText(frame, "PREVIEW - ALINHE O PENDULO", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 0), 2)
                 
+                    if self.calib_orig and self.calib_align:
+                        cv2.line(frame, self.calib_orig, self.calib_align, (0, 255, 0), 2) # Linha do Eixo Y
+                        cv2.circle(frame, self.calib_orig, 6, (0, 0, 255), -1)             # Ponto Origem (0,0)
+                        cv2.putText(frame, "EIXOS CALIBRADOS", (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+                elif self.mode == "CALIBRATION_STEP1":
+                    cv2.putText(frame, "CLIQUE NO ROLAMENTO (ORIGEM)", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 165, 255), 2)
+                elif self.mode == "CALIBRATION_STEP2":
+                    cv2.putText(frame, "CLIQUE NA HASTE INFERIOR", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 165, 255), 2)
+                    cv2.circle(frame, self.calib_orig, 5, (0, 255, 255), -1)
+                
                 elif self.mode == "COUNTDOWN":
                     cv2.putText(frame, str(self.countdown_value), (280, 280), cv2.FONT_HERSHEY_DUPLEX, 5, (0, 165, 255), 10)
                     cv2.putText(frame, "PREPARANDO...", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 165, 255), 2)
@@ -143,37 +160,34 @@ class App(ctk.CTk):
                     cv2.putText(frame, "GRAVANDO!", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
                     
                     elapsed = time.time() - self.start_time
-                    # Envia a foto para a fila dos workers e continua a execução
                     self.tracker.submit_frame(frame, self.frame_count, elapsed)
                     self.frame_count += 1
 
-                    # Resgata todos os resultados prontos que os workers colocaram na fila
                     results = self.tracker.get_latest_results()
-                    
                     box = 25
-                    last_x1, last_y1, last_x2, last_y2 = 0, 0, 0, 0
+                    last_x1_raw, last_y1_raw, last_x2_raw, last_y2_raw = 0, 0, 0, 0
                     
                     for res in results:
-                        f_id, elp, x1, y1, x2, y2 = res
+                        f_id, elp, x1_raw, y1_raw, x2_raw, y2_raw, x1, y1, x2, y2 = res
                         self.time_history.append(elp)
                         
-                        if x1 > 0 and y1 > 0:
+                        if x1_raw > 0 and y1_raw > 0:
                             self.history_x1.append(x1)
-                            self.history_y1.append(-y1)
-                            last_x1, last_y1 = x1, y1
-                        if x2 > 0 and y2 > 0:
+                            self.history_y1.append(y1) # Sem o sinal de '-' manual (o C++ já inverteu)
+                            last_x1_raw, last_y1_raw = x1_raw, y1_raw
+                        if x2_raw > 0 and y2_raw > 0:
                             self.history_x2.append(x2)
-                            self.history_y2.append(-y2)
-                            last_x2, last_y2 = x2, y2
+                            self.history_y2.append(y2)
+                            last_x2_raw, last_y2_raw = x2_raw, y2_raw
 
-                    # Desenha as miras usando o dado mais recente do lote recebido
-                    if last_x1 > 0 and last_y1 > 0:
-                        cv2.rectangle(frame, (int(last_x1)-box, int(last_y1)-box), (int(last_x1)+box, int(last_y1)+box), (0, 0, 255), 2)
-                        cv2.circle(frame, (int(last_x1), int(last_y1)), 4, (0, 255, 0), -1) 
-                    if last_x2 > 0 and last_y2 > 0:
-                        cv2.rectangle(frame, (int(last_x2)-box, int(last_y2)-box), (int(last_x2)+box, int(last_y2)+box), (255, 0, 0), 2)
-                        cv2.circle(frame, (int(last_x2), int(last_y2)), 4, (0, 255, 0), -1)
-
+                    # Desenha as miras usando OS PIXELS BRUTOS, não a matemática física
+                    if last_x1_raw > 0 and last_y1_raw > 0:
+                        cv2.rectangle(frame, (int(last_x1_raw)-box, int(last_y1_raw)-box), (int(last_x1_raw)+box, int(last_y1_raw)+box), (0, 0, 255), 2)
+                        cv2.circle(frame, (int(last_x1_raw), int(last_y1_raw)), 4, (0, 255, 0), -1) 
+                    if last_x2_raw > 0 and last_y2_raw > 0:
+                        cv2.rectangle(frame, (int(last_x2_raw)-box, int(last_y2_raw)-box), (int(last_x2_raw)+box, int(last_y2_raw)+box), (255, 0, 0), 2)
+                        cv2.circle(frame, (int(last_x2_raw), int(last_y2_raw)), 4, (0, 255, 0), -1)
+                
                 cv2_img = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                 img = Image.fromarray(cv2_img)
                 img_tk = ctk.CTkImage(light_image=img, dark_image=img, size=(640, 480))
@@ -274,6 +288,20 @@ class App(ctk.CTk):
             print(f"Sucesso: Arquivo de threads salvo em {filename}")
         except Exception as e:
             print(f"Erro ao salvar CSV: {e}")
+
+    def start_calibration(self):
+        if self.mode == "PREVIEW":
+            self.mode = "CALIBRATION_STEP1"
+
+    def on_video_click(self, event):
+        if self.mode == "CALIBRATION_STEP1":
+            self.calib_orig = (event.x, event.y)
+            self.mode = "CALIBRATION_STEP2"
+        elif self.mode == "CALIBRATION_STEP2":
+            x_align, y_align = event.x, event.y
+            self.calib_align = (x_align, y_align) # Guarda o ponto da haste
+            self.tracker.set_calibration(self.calib_orig[0], self.calib_orig[1], x_align, y_align)
+            self.mode = "PREVIEW"
 
     def on_closing(self):
         self.tracker.stop_tracking()
