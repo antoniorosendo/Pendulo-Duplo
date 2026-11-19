@@ -30,8 +30,8 @@ private:
     struct TrackingResult {
         int frame_id;
         double elapsed;
-        double x1_raw, y1_raw, x2_raw, y2_raw; // Para o OpenCV/GUI
-        double x1, y1, x2, y2;                 // Calibradas para o CSV/Gráfico
+        double x1_raw, y1_raw, x2_raw, y2_raw, x3_raw, y3_raw; // Pixels brutos para a GUI
+        double x1, y1, x2, y2, x3, y3;                         // Coordenadas calibradas para o CSV
     };
 
     static constexpr std::size_t NUM_WORKERS = 6;
@@ -54,7 +54,6 @@ private:
     std::array<std::thread, NUM_WORKERS> workers;
     std::thread writer_thread;
     
-    // Armazenamento dos TIDs para o Python
     std::vector<int> worker_tids;
     int writer_tid = 0;
     std::mutex tid_mutex;
@@ -67,7 +66,7 @@ private:
     std::mutex calib_mutex;
 
     std::mutex config_mutex;
-    std::vector<HSVRange> redRanges, blueRanges;
+    std::vector<HSVRange> redRanges, blueRanges, greenRanges;
     double minArea = 80, maxArea = 5000, minCircularity = 0.6;
 
     static cv::Mat toMat(py::array_t<unsigned char>& a) {
@@ -100,14 +99,16 @@ private:
     }
 
     TrackingResult process_frame(const FrameTask& task) {
-        TrackingResult result{task.frame_id, task.elapsed, 0,0,0,0, 0,0,0,0};
+        TrackingResult result{task.frame_id, task.elapsed, 0,0,0,0,0,0, 0,0,0,0,0,0};
         if (task.frame.empty()) return result;
 
-        std::vector<HSVRange> red_ranges, blue_ranges;
+        std::vector<HSVRange> red_ranges, blue_ranges, green_ranges;
         double min_area, max_area, min_circularity;
         {
             std::lock_guard<std::mutex> lock(config_mutex);
-            red_ranges = redRanges; blue_ranges = blueRanges;
+            red_ranges = redRanges; 
+            blue_ranges = blueRanges;
+            green_ranges = greenRanges;
             min_area = minArea; max_area = maxArea; min_circularity = minCircularity;
         }
 
@@ -115,21 +116,28 @@ private:
         cv::cvtColor(task.frame, hsv, cv::COLOR_BGR2HSV);
 
         cv::Point2d center;
+        // Massa 1 (Vermelho)
         if (findBlob(colorMask(hsv, red_ranges), min_area, max_area, min_circularity, center)) {
             result.x1_raw = center.x; result.y1_raw = center.y;
             cv::Point2d calib = apply_calibration(center);
             result.x1 = calib.x; result.y1 = calib.y;
         }
+        // Massa 2 (Azul)
         if (findBlob(colorMask(hsv, blue_ranges), min_area, max_area, min_circularity, center)) {
             result.x2_raw = center.x; result.y2_raw = center.y;
             cv::Point2d calib = apply_calibration(center);
             result.x2 = calib.x; result.y2 = calib.y;
         }
+        // Articulação Central (Verde)
+        if (findBlob(colorMask(hsv, green_ranges), min_area, max_area, min_circularity, center)) {
+            result.x3_raw = center.x; result.y3_raw = center.y;
+            cv::Point2d calib = apply_calibration(center);
+            result.x3 = calib.x; result.y3 = calib.y;
+        }
         return result;
     }
 
     void worker_loop() {
-        // Registra o TID nativo no Linux
         int tid = syscall(SYS_gettid);
         {
             std::lock_guard<std::mutex> lock(tid_mutex);
@@ -168,7 +176,7 @@ private:
         writer_tid = syscall(SYS_gettid);
         
         std::ofstream file(csv_filename);
-        file << "time;x1;y1;x2;y2\n";
+        file << "time;x1;y1;x2;y2;x3;y3\n";
         
         int expected_frame = 0;
         std::unordered_map<int, TrackingResult> out_of_order_buffer;
@@ -186,14 +194,14 @@ private:
                 writer_queue.pop();
             }
             
-            // Reordenação cronológica para garantir a integridade da análise física
             out_of_order_buffer[result.frame_id] = result;
             
             while (out_of_order_buffer.find(expected_frame) != out_of_order_buffer.end()) {
                 auto& res = out_of_order_buffer[expected_frame];
-                // Formatação direta no C++
-                file << res.elapsed << ";" << res.x1 << ";" << res.y1 << ";" 
-                     << res.x2 << ";" << res.y2 << "\n";
+                file << res.elapsed << ";" 
+                     << res.x1 << ";" << res.y1 << ";" 
+                     << res.x2 << ";" << res.y2 << ";"
+                     << res.x3 << ";" << res.y3 << "\n";
                 out_of_order_buffer.erase(expected_frame);
                 expected_frame++;
             }
@@ -203,8 +211,9 @@ private:
 
 public:
     PendulumTracker() {
-        redRanges  = makeRanges(165, 120, 70, 10, 255, 255);
-        blueRanges = makeRanges(95, 120, 50, 130, 255, 255);
+        redRanges   = makeRanges(165, 120, 70, 10, 255, 255);
+        blueRanges  = makeRanges(95, 120, 50, 130, 255, 255);
+        greenRanges = makeRanges(35, 80, 50, 85, 255, 255); // Faixa HSV padrão para Verde
     }
 
     void set_calibration(double x_orig, double y_orig, double x_align, double y_align) {
@@ -241,7 +250,6 @@ public:
         worker_tids.clear();
         writer_tid = 0;
 
-        // Limpa as filas de execuções anteriores
         std::queue<FrameTask> empty_fq; std::swap(frame_queue, empty_fq);
         std::queue<TrackingResult> empty_wq; std::swap(writer_queue, empty_wq);
         std::queue<TrackingResult> empty_gq; std::swap(gui_queue, empty_gq);
@@ -255,7 +263,7 @@ public:
     void submit_frame(py::array_t<unsigned char> input_frame, int frame_id, double elapsed) {
         if (!started) return;
         cv::Mat view = toMat(input_frame);
-        cv::Mat owned_frame = view.clone(); // Cópia isolada para o worker
+        cv::Mat owned_frame = view.clone();
         
         {
             std::lock_guard<std::mutex> lock(frame_mutex);
@@ -302,22 +310,27 @@ public:
         std::lock_guard<std::mutex> lock(config_mutex);
         blueRanges = makeRanges(hLo, sLo, vLo, hHi, sHi, vHi);
     }
+    void set_green_range(int hLo, int sLo, int vLo, int hHi, int sHi, int vHi) {
+        std::lock_guard<std::mutex> lock(config_mutex);
+        greenRanges = makeRanges(hLo, sLo, vLo, hHi, sHi, vHi);
+    }
     void set_blob_filters(double minA, double maxA, double minCirc) {
         std::lock_guard<std::mutex> lock(config_mutex);
         minArea = minA; maxArea = maxA; minCircularity = minCirc;
     }
     py::tuple debug_masks(py::array_t<unsigned char> input_frame) {
         cv::Mat frame = toMat(input_frame), hsv;
-        std::vector<HSVRange> red_ranges, blue_ranges;
+        std::vector<HSVRange> red_ranges, blue_ranges, green_ranges;
         {
             std::lock_guard<std::mutex> lock(config_mutex);
-            red_ranges = redRanges; blue_ranges = blueRanges;
+            red_ranges = redRanges; blue_ranges = blueRanges; green_ranges = greenRanges;
         }
         cv::cvtColor(frame, hsv, cv::COLOR_BGR2HSV);
-        cv::Mat r = colorMask(hsv, red_ranges), b = colorMask(hsv, blue_ranges);
+        cv::Mat r = colorMask(hsv, red_ranges), b = colorMask(hsv, blue_ranges), g = colorMask(hsv, green_ranges);
         py::array_t<unsigned char> ra({r.rows, r.cols}, r.data);
         py::array_t<unsigned char> ba({b.rows, b.cols}, b.data);
-        return py::make_tuple(ra, ba);
+        py::array_t<unsigned char> ga({g.rows, g.cols}, g.data);
+        return py::make_tuple(ra, ba, ga);
     }
 
     py::list get_latest_results() {
@@ -327,8 +340,8 @@ public:
             auto r = gui_queue.front();
             gui_queue.pop();
             out.append(py::make_tuple(r.frame_id, r.elapsed, 
-                                      r.x1_raw, r.y1_raw, r.x2_raw, r.y2_raw, 
-                                      r.x1, r.y1, r.x2, r.y2));
+                                      r.x1_raw, r.y1_raw, r.x2_raw, r.y2_raw, r.x3_raw, r.y3_raw,
+                                      r.x1, r.y1, r.x2, r.y2, r.x3, r.y3));
         }
         return out;
     }
@@ -344,6 +357,7 @@ PYBIND11_MODULE(pendulum_tracker, m) {
         .def("get_thread_ids", &PendulumTracker::get_thread_ids)
         .def("set_red_range", &PendulumTracker::set_red_range)
         .def("set_blue_range", &PendulumTracker::set_blue_range)
+        .def("set_green_range", &PendulumTracker::set_green_range)
         .def("set_blob_filters", &PendulumTracker::set_blob_filters)
         .def("debug_masks", &PendulumTracker::debug_masks)
         .def("set_calibration", &PendulumTracker::set_calibration);

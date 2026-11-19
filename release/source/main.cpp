@@ -19,10 +19,6 @@
 using namespace std;
 using namespace cv;
 
-// ---------------------------------------------------------------------------
-// Arquitetura de 8 threads:
-//   1 thread de captura (main)  +  NUM_WORKERS de processamento  +  1 de escrita
-// ---------------------------------------------------------------------------
 constexpr int NUM_WORKERS = 6;
 
 bool is_graph_activated = false;

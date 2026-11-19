@@ -29,6 +29,7 @@ class App(ctk.CTk):
 
         self.history_x1, self.history_y1 = [], []
         self.history_x2, self.history_y2 = [], []
+        self.history_x3, self.history_y3 = [], []
 
         self.start_time = 0
         self.time_history = []
@@ -107,6 +108,7 @@ class App(ctk.CTk):
         if self.mode == "PREVIEW":
             self.history_x1.clear(); self.history_y1.clear()
             self.history_x2.clear(); self.history_y2.clear()
+            self.history_x3.clear(); self.history_y3.clear()
             self.time_history.clear()
             self.thread_time_history.clear()
             for th in self.thread_history: th.clear()
@@ -125,7 +127,6 @@ class App(ctk.CTk):
             self.start_time = time.time()
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             csv_filename = f"../../CSV/pendulo/pendulo_log_{timestamp}.csv"
-            # Inicia as threads no C++
             self.tracker.start_tracking(csv_filename)
 
     def stop_video(self):
@@ -143,8 +144,8 @@ class App(ctk.CTk):
                     cv2.putText(frame, "PREVIEW - ALINHE O PENDULO", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 0), 2)
                 
                     if self.calib_orig and self.calib_align:
-                        cv2.line(frame, self.calib_orig, self.calib_align, (0, 255, 0), 2) # Linha do Eixo Y
-                        cv2.circle(frame, self.calib_orig, 6, (0, 0, 255), -1)             # Ponto Origem (0,0)
+                        cv2.line(frame, self.calib_orig, self.calib_align, (0, 255, 0), 2)
+                        cv2.circle(frame, self.calib_orig, 6, (0, 0, 255), -1)
                         cv2.putText(frame, "EIXOS CALIBRADOS", (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
                 elif self.mode == "CALIBRATION_STEP1":
                     cv2.putText(frame, "CLIQUE NO ROLAMENTO (ORIGEM)", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 165, 255), 2)
@@ -165,28 +166,37 @@ class App(ctk.CTk):
 
                     results = self.tracker.get_latest_results()
                     box = 25
-                    last_x1_raw, last_y1_raw, last_x2_raw, last_y2_raw = 0, 0, 0, 0
+                    last_x1_raw, last_y1_raw = 0, 0
+                    last_x2_raw, last_y2_raw = 0, 0
+                    last_x3_raw, last_y3_raw = 0, 0
                     
                     for res in results:
-                        f_id, elp, x1_raw, y1_raw, x2_raw, y2_raw, x1, y1, x2, y2 = res
+                        f_id, elp, x1_raw, y1_raw, x2_raw, y2_raw, x3_raw, y3_raw, x1, y1, x2, y2, x3, y3 = res
                         self.time_history.append(elp)
                         
                         if x1_raw > 0 and y1_raw > 0:
                             self.history_x1.append(x1)
-                            self.history_y1.append(y1) # Sem o sinal de '-' manual (o C++ já inverteu)
+                            self.history_y1.append(y1)
                             last_x1_raw, last_y1_raw = x1_raw, y1_raw
                         if x2_raw > 0 and y2_raw > 0:
                             self.history_x2.append(x2)
                             self.history_y2.append(y2)
                             last_x2_raw, last_y2_raw = x2_raw, y2_raw
+                        if x3_raw > 0 and y3_raw > 0:
+                            self.history_x3.append(x3)
+                            self.history_y3.append(y3)
+                            last_x3_raw, last_y3_raw = x3_raw, y3_raw
 
-                    # Desenha as miras usando OS PIXELS BRUTOS, não a matemática física
+                    # Desenho das miras (Vermelho, Azul e Verde)
                     if last_x1_raw > 0 and last_y1_raw > 0:
                         cv2.rectangle(frame, (int(last_x1_raw)-box, int(last_y1_raw)-box), (int(last_x1_raw)+box, int(last_y1_raw)+box), (0, 0, 255), 2)
                         cv2.circle(frame, (int(last_x1_raw), int(last_y1_raw)), 4, (0, 255, 0), -1) 
                     if last_x2_raw > 0 and last_y2_raw > 0:
                         cv2.rectangle(frame, (int(last_x2_raw)-box, int(last_y2_raw)-box), (int(last_x2_raw)+box, int(last_y2_raw)+box), (255, 0, 0), 2)
                         cv2.circle(frame, (int(last_x2_raw), int(last_y2_raw)), 4, (0, 255, 0), -1)
+                    if last_x3_raw > 0 and last_y3_raw > 0:
+                        cv2.rectangle(frame, (int(last_x3_raw)-box, int(last_y3_raw)-box), (int(last_x3_raw)+box, int(last_y3_raw)+box), (0, 255, 0), 2)
+                        cv2.circle(frame, (int(last_x3_raw), int(last_y3_raw)), 4, (0, 255, 255), -1)
                 
                 cv2_img = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                 img = Image.fromarray(cv2_img)
@@ -198,7 +208,6 @@ class App(ctk.CTk):
         self.after(15, self.update_frame)
 
     def update_system_stats(self):
-        # Mapeia os TIDs nativos diretamente do C++ para a GUI
         cpp_tids = self.tracker.get_thread_ids()
         workers_tids = cpp_tids.get("workers", [])
         writer_tid = cpp_tids.get("writer", 0)
@@ -209,7 +218,6 @@ class App(ctk.CTk):
 
         self.collect_thread_usage()
     
-        # Registra o tempo exato desta medição das threads
         if self.mode == "TRACKING":
             elapsed = time.time() - self.start_time
             self.thread_time_history.append(elapsed)
@@ -250,11 +258,12 @@ class App(ctk.CTk):
         self.thread_usage = usage
 
     def plot_graph(self):
-        if not self.history_x1 and not self.history_x2: return 
+        if not self.history_x1 and not self.history_x2 and not self.history_x3: return 
         plt.style.use('dark_background')
         plt.figure(figsize=(8, 6))
-        if self.history_x1: plt.plot(self.history_x1, self.history_y1, color='red', label='Massa 1')
-        if self.history_x2: plt.plot(self.history_x2, self.history_y2, color='blue', label='Massa 2')
+        if self.history_x1: plt.plot(self.history_x1, self.history_y1, color='red', label='Haste 1 (Vermelho)')
+        if self.history_x2: plt.plot(self.history_x2, self.history_y2, color='blue', label='Haste 2 (Azul)')
+        if self.history_x3: plt.plot(self.history_x3, self.history_y3, color='lime', label='Articulação (Verde)')
         plt.title('TRAJETORIA DO PENDULO DUPLO')
         plt.xlabel('Posição X'); plt.ylabel('Posição Y')
         plt.legend(); plt.grid(True, alpha=0.3); plt.show()
@@ -299,7 +308,7 @@ class App(ctk.CTk):
             self.mode = "CALIBRATION_STEP2"
         elif self.mode == "CALIBRATION_STEP2":
             x_align, y_align = event.x, event.y
-            self.calib_align = (x_align, y_align) # Guarda o ponto da haste
+            self.calib_align = (x_align, y_align)
             self.tracker.set_calibration(self.calib_orig[0], self.calib_orig[1], x_align, y_align)
             self.mode = "PREVIEW"
 
